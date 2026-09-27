@@ -95,28 +95,37 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createPlatform(): void {
-    const columns = 9;
-    const rows = 9;
-    const tileScale = 0.5;
+    const groundMap = [
+      [1, 1, 1, 1, 1, 1],
+      [1, 1, 1, 1, 1, 1],
+      [1, 1, 0, 0, 1, 1],
+      [1, 1, 0, 0, 1, 1],
+      [1, 1, 1, 1, 1, 1],
+      [0, 0, 1, 1, 0, 0],
+    ];
 
-    // Top surface dimensions, excluding stone thickness
-    const tileWidth = 256 * tileScale;
-    const tileHeight = 128 * tileScale;
-
+    const scale = 0.5;
+    const tileWidth = 256 * scale;
+    const tileHeight = 128 * scale;
     const startX = 600;
-    const startY = 140;
+    const startY = 200;
 
-    for (let row = 0; row < rows; row++) {
-      for (let column = 0; column < columns; column++) {
-        const x = startX + (column - row) * (tileWidth / 2);
-        const y = startY + (column + row) * (tileHeight / 2);
+    groundMap.forEach((row, rowIndex) => {
+      row.forEach((tile, columnIndex)  => {
+        if(tile === 0) return;
+
+        const x = 
+          startX + (columnIndex - rowIndex) * tileWidth / 2;
+
+        const y =
+          startY + (columnIndex + rowIndex) * tileHeight / 2;
 
         this.add.image(x, y, 'platform-tile')
           .setOrigin(0.5, 0)
-          .setScale(tileScale)
-          .setDepth(-1000 + row + column);
-      }
-    }
+          .setScale(scale)
+          .setDepth(-1000 + rowIndex + columnIndex);
+      });
+    });
   }
 
   private uiElements(): void {
