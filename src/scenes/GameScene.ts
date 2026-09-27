@@ -21,6 +21,7 @@ export class GameScene extends Phaser.Scene {
   // Art Assets
   preload(): void {
     this.load.image('platform-tile', '/assets/art/stone_E.png');
+    this.load.image('dirt-tile', '/assets/art/dirt_E.png');
   }
 
   create(): void {
@@ -119,8 +120,20 @@ export class GameScene extends Phaser.Scene {
 
         const y =
           startY + (columnIndex + rowIndex) * tileHeight / 2;
+        
+        const dirtLayers = 7;
+        const layerSpacing = 6; // Vertical spacing in screen pixels
 
-        this.add.image(x, y, 'platform-tile')
+        for (let layer = dirtLayers; layer >= 1; layer--) {
+          this.add.image(x, y + layer * layerSpacing, 'dirt-tile')
+            .setOrigin(0.5, 0)
+            .setScale(scale)
+            .setDepth(
+              -2000 - layer * 100 + rowIndex + columnIndex,
+            );
+        }
+
+        this.add.image(x, y, 'platform-tile') // Main tile
           .setOrigin(0.5, 0)
           .setScale(scale)
           .setDepth(-1000 + rowIndex + columnIndex);
