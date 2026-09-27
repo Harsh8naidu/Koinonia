@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+
+# Local environment variables
+.env
+.env.*
+!.env.example
+
+# Local configuration
+*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Tool caches
+.vite/
+*.tsbuildinfo
+
+# Test reports
+coverage/
+playwright-report/
+test-results/
+
+# Editor files
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+*.swo
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
