@@ -3,7 +3,7 @@ import Phaser from 'phaser';
 const SPEED = 260;
 const JUMP_SPEED = 520;
 const CONTROL_CODES = new Set([
-  'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyW', 'ArrowUp',
+  'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyS', 'KeyW', 'ArrowUp', 'ArrowDown',
   'KeyQ', 'Digit1', 'Digit2',
 ]);
 
@@ -18,41 +18,31 @@ export class GameScene extends Phaser.Scene {
 
   constructor() { super('Game'); }
 
+  // Art Assets
+  preload(): void {
+    this.load.image('platform-tile', '/assets/art/stone_E.png');
+  }
+
   create(): void {
     // Generated textures keep the foundation independent of external art.
     const graphics = this.make.graphics({ x: 0, y: 0 });
     graphics.fillStyle(0xffffff).fillRect(0, 0, 40, 56);
     graphics.generateTexture('character', 40, 56);
-    graphics.clear().fillStyle(0x40545f).fillRect(0, 0, 1280, 80);
-    graphics.generateTexture('floor', 1280, 80);
+    
     graphics.destroy();
 
-    const floor = this.physics.add.staticImage(640, 680, 'floor');
-    this.add.rectangle(640, 643, 1280, 6, 0x81949a);
-    this.physics.world.setBounds(0, 0, 1280, 720);
+    //const floor = this.physics.add.staticImage(640, 680, 'floor');
 
-    this.characters = [
-      this.physics.add.image(380, 600, 'character').setTint(0xf0bf75),
-      this.physics.add.image(520, 600, 'character').setTint(0x83d4da),
-    ];
-    this.characters.forEach((character, index) => {
-      character.setCollideWorldBounds(true);
-      this.physics.add.collider(character, floor);
-      this.labels.push(this.add.text(character.x, character.y, index === 0 ? 'A' : 'B', {
-        fontFamily: 'monospace', fontSize: '22px', color: '#10232c',
-      }).setOrigin(0.5));
-    });
-    this.add.text(40, 34, 'FOUNDATION / 01', {
-      fontFamily: 'monospace', fontSize: '16px', color: '#9aafb9',
-    });
-    this.status = this.add.text(40, 72, '', { fontSize: '24px', color: '#ead19b' });
-    this.add.text(40, 115, 'Move, jump, and switch between your two teammates.', {
-      fontSize: '18px', color: '#9aafb9',
-    });
-    this.indicator = this.add.text(0, 0, '▼ ACTIVE', {
-      fontFamily: 'monospace', fontSize: '16px', color: '#ffffff',
-    }).setOrigin(0.5, 1);
+    // Camera
+    this.cameras.main.setZoom(0.85);
 
+    // Create Platform
+    this.createPlatform();
+
+    this.createCharacters();
+
+    this.uiElements();
+    
     // Listen on the focusable canvas only: other page elements keep their keys.
     const canvas = this.game.canvas;
     canvas.tabIndex = 0;
@@ -85,6 +75,64 @@ export class GameScene extends Phaser.Scene {
     this.select(0);
   }
 
+  private createCharacters(): void {
+    this.characters = [
+      this.physics.add.image(380, 600, 'character').setTint(0xf0bf75),
+      this.physics.add.image(520, 600, 'character').setTint(0x83d4da),
+    ];
+    this.characters.forEach((character, index) => {
+      const body = character.body as Phaser.Physics.Arcade.Body;
+      body.setAllowGravity(false);
+
+      character.setCollideWorldBounds(true);
+      
+      this.labels.push(this.add.text(character.x, character.y, index === 0 ? 'A' : 'B', {
+        fontFamily: 'monospace', 
+        fontSize: '22px', 
+        color: '#10232c',
+      }).setOrigin(0.5));
+    });
+  }
+
+  private createPlatform(): void {
+    const columns = 9;
+    const rows = 9;
+    const tileScale = 0.5;
+
+    // Top surface dimensions, excluding stone thickness
+    const tileWidth = 256 * tileScale;
+    const tileHeight = 128 * tileScale;
+
+    const startX = 600;
+    const startY = 140;
+
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        const x = startX + (column - row) * (tileWidth / 2);
+        const y = startY + (column + row) * (tileHeight / 2);
+
+        this.add.image(x, y, 'platform-tile')
+          .setOrigin(0.5, 0)
+          .setScale(tileScale)
+          .setDepth(-1000 + row + column);
+      }
+    }
+  }
+
+  private uiElements(): void {
+    this.add.text(-80, -30, 'FOUNDATION / 01', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#9aafb9',
+    });
+    this.status = this.add.text(-80, 0, '', { fontSize: '24px', color: '#ead19b' });
+    this.add.text(-80, 35, 'Move, jump, and switch between your two teammates.', {
+      fontSize: '18px', color: '#9aafb9',
+    });
+    this.indicator = this.add.text(0, 0, '▼ ACTIVE', {
+      fontFamily: 'monospace', fontSize: '16px', color: '#ffffff',
+    }).setOrigin(0.5, 1);
+
+  }
+
   private select(index: number): void {
     this.characters[this.activeIndex].setVelocityX(0);
     this.activeIndex = index;
@@ -97,13 +145,26 @@ export class GameScene extends Phaser.Scene {
     if (!active) return;
     const left = this.held.has('KeyA') || this.held.has('ArrowLeft');
     const right = this.held.has('KeyD') || this.held.has('ArrowRight');
-    active.setVelocityX((Number(right) - Number(left)) * SPEED);
-    const body = active.body as Phaser.Physics.Arcade.Body;
-    if (this.jumpQueued && body.blocked.down) active.setVelocityY(-JUMP_SPEED);
-    this.jumpQueued = false;
+    const up = this.held.has('KeyW') || this.held.has('ArrowUp');
+    const down = this.held.has('KeyS') || this.held.has('ArrowDown');
+
+    let dx = Number(right) - Number(left);
+    let dy = Number(down) - Number(up);
+
+    // Clamp the diagonal movement speed
+    const length = Math.hypot(dx, dy);
+
+    if (length > 0) {
+      dx /= length;
+      dy /= length;
+    }
+
+    active.setVelocity(dx * SPEED, dy * SPEED);
+
     this.characters.forEach((character, index) => {
       this.labels[index].setPosition(character.x, character.y);
     });
+
     this.indicator.setPosition(active.x, active.y - 40);
   }
 }
