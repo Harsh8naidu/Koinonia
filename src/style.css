@@ -1,11 +1,96 @@
-:root { font-family: system-ui, sans-serif; color: #dae3e6; background: #11191e; }
-* { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-main { width: min(1280px, 96vw); }
-header { display: flex; align-items: baseline; gap: 24px; padding: 12px 0; }
-h1 { font-size: 24px; margin: 0; letter-spacing: .06em; }
-header span, p { color: #a2b3be; font-size: 14px; }
-#game { aspect-ratio: 16 / 9; width: 100%; }
-canvas { display: block; outline: 2px solid #3d535f; outline-offset: 2px; }
-canvas:focus { outline-color: #ead19b; }
-p { line-height: 1.7; }
+:root {
+  font-family: system-ui, sans-serif;
+  color: #dae3e6;
+  background: #11191e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  padding: 12px;
+}
+
+main {
+  width: 100%;
+  max-width: 1280px;
+  height: 100%;
+  height: calc(100dvh - 24px);
+  margin: 0 auto;
+
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0.06em;
+}
+
+header span,
+p {
+  color: #a2b3be;
+  font-size: 14px;
+}
+
+/* Phaser fits the canvas inside the available space. */
+#game {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  outline: none;
+}
+
+canvas:focus {
+  outline: 2px solid #ead19b;
+  outline-offset: -2px;
+}
+
+p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Leave more room for the game on small or short screens. */
+@media (max-width: 600px), (max-height: 500px) {
+  body {
+    padding: 6px;
+  }
+
+  main {
+    height: calc(100dvh - 12px);
+    gap: 6px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  header span,
+  p {
+    font-size: 11px;
+  }
+}
