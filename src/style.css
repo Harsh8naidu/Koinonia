@@ -1,0 +1,11 @@
+:root { font-family: system-ui, sans-serif; color: #dae3e6; background: #11191e; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+main { width: min(1280px, 96vw); }
+header { display: flex; align-items: baseline; gap: 24px; padding: 12px 0; }
+h1 { font-size: 24px; margin: 0; letter-spacing: .06em; }
+header span, p { color: #a2b3be; font-size: 14px; }
+#game { aspect-ratio: 16 / 9; width: 100%; }
+canvas { display: block; outline: 2px solid #3d535f; outline-offset: 2px; }
+canvas:focus { outline-color: #ead19b; }
+p { line-height: 1.7; }
