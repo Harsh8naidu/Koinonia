@@ -8,13 +8,31 @@ const CONTROL_CODES = new Set([
 ]);
 
 export class GameScene extends Phaser.Scene {
-  private characters: Phaser.Physics.Arcade.Image[] = [];
+  private characters: Phaser.GameObjects.Image[] = [];
   private labels: Phaser.GameObjects.Text[] = [];
   private activeIndex = 0;
   private held = new Set<string>();
   private jumpQueued = false;
   private indicator!: Phaser.GameObjects.Text;
   private status!: Phaser.GameObjects.Text;
+
+  private readonly groundMap = [
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 0, 0, 1, 1, 1, 1],
+    [1, 1, 1, 1, 0, 0, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
+  ];
+
+  private readonly tileScale = 0.5;
+  private readonly tileWidth = 256 * this.tileScale;
+  private readonly tileHeight = 128 * this.tileScale;
+  private readonly platformX = 600;
+  private readonly platformY = 100;
 
   constructor() { super('Game'); }
 
@@ -77,15 +95,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createCharacters(): void {
-    this.characters = [
-      this.physics.add.image(380, 600, 'character').setTint(0xf0bf75),
-      this.physics.add.image(520, 600, 'character').setTint(0x83d4da),
-    ];
-    this.characters.forEach((character, index) => {
-      const body = character.body as Phaser.Physics.Arcade.Body;
-      body.setAllowGravity(false);
+    const spawnA = this.tileCentre(1, 1);
+    const spawnB = this.tileCentre(2, 1);
 
-      character.setCollideWorldBounds(true);
+    this.characters = [
+      this.add.image(spawnA.x, spawnA.y, 'character').setTint(0xf0bf75),
+      
+      this.add.image(spawnB.x, spawnB.y, 'character').setTint(0x83d4da),
+    ];
+
+    this.characters.forEach((character, index) => {
+      character.setOrigin(0.5, 1);
       
       this.labels.push(this.add.text(character.x, character.y, index === 0 ? 'A' : 'B', {
         fontFamily: 'monospace', 
@@ -96,20 +116,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createPlatform(): void {
-    const groundMap = [
-      [1, 1, 1, 1, 1, 1],
-      [1, 1, 1, 1, 1, 1],
-      [1, 1, 0, 0, 1, 1],
-      [1, 1, 0, 0, 1, 1],
-      [1, 1, 1, 1, 1, 1],
-      [0, 0, 1, 1, 0, 0],
-    ];
-
-    const scale = 0.5;
-    const tileWidth = 256 * scale;
-    const tileHeight = 128 * scale;
-    const startX = 600;
-    const startY = 200;
+    
+    const groundMap = this.groundMap;
+    const scale = this.tileScale;
+    const tileWidth = this.tileWidth;
+    const tileHeight = this.tileHeight;
+    const startX = this.platformX;
+    const startY = this.platformY;
 
     groundMap.forEach((row, rowIndex) => {
       row.forEach((tile, columnIndex)  => {
@@ -141,6 +154,47 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /* BINDING/RESTRICTING CHARACTER MOVEMENT TO THE PLATFORM PER TILE - [START] */
+
+  // Find the centre of a tile's top surface
+  private tileCentre(column: number, row: number) {
+    return {
+      x: this.platformX + (column - row) * this.tileWidth / 2,
+
+      y : this.platformY + (column + row + 1) * this.tileHeight / 2,
+    };
+  }
+
+  // Find which tile contains a world position
+  private isGroundAt(x: number, y: number): boolean {
+    const offsetX = x - this.platformX;
+    const offsetY = y - this.platformY;
+
+    const column = Math.floor(
+      offsetX / this.tileWidth + offsetY / this.tileHeight,
+    );
+
+    const row = Math.floor(
+      offsetY / this.tileHeight - offsetX / this.tileWidth,
+    );
+
+    return this.groundMap[row]?.[column] === 1;
+  }
+
+  private canStandAt(x: number, y: number): boolean {
+    const halfWidth = 8;
+    const halfHeight = 4;
+
+    return (
+      this.isGroundAt(x - halfWidth, y - halfHeight) &&
+      this.isGroundAt(x + halfWidth, y - halfHeight) &&
+      this.isGroundAt(x - halfWidth, y + halfHeight) &&
+      this.isGroundAt(x + halfWidth, y + halfHeight)
+    )
+  }
+
+  /* BINDING/RESTRICTING CHARACTER MOVEMENT TO THE PLATFORM PER TILE - [END] */
+
   private uiElements(): void {
     this.add.text(-80, -30, 'FOUNDATION / 01', {
       fontFamily: 'monospace', fontSize: '16px', color: '#9aafb9',
@@ -156,15 +210,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private select(index: number): void {
-    this.characters[this.activeIndex].setVelocityX(0);
     this.activeIndex = index;
-    this.jumpQueued = false;
+
     this.status.setText(`Active teammate: ${index === 0 ? 'A' : 'B'}   ·   Q to switch`);
   }
 
-  update(): void {
+  update(_time: number, delta: number): void {
     const active = this.characters[this.activeIndex];
     if (!active) return;
+
     const left = this.held.has('KeyA') || this.held.has('ArrowLeft');
     const right = this.held.has('KeyD') || this.held.has('ArrowRight');
     const up = this.held.has('KeyW') || this.held.has('ArrowUp');
@@ -179,12 +233,29 @@ export class GameScene extends Phaser.Scene {
     if (length > 0) {
       dx /= length;
       dy /= length;
-    }
 
-    active.setVelocity(dx * SPEED, dy * SPEED);
+    // Convert pixels per second to this frame's distance
+    // Cap long frames to prevent sudden large jumps
+    const distance = SPEED * Math.min(delta, 50) / 1000;
+
+    // Check small steps so movement cannot skip across holes.
+    const steps = Math.max(1, Math.ceil(distance / 2));
+    const stepX = dx * distance / steps;
+    const stepY = dy * distance / steps;
+
+    for (let step = 0; step < steps; step++) {
+      if (this.canStandAt(active.x + stepX, active.y)) {
+        active.x += stepX;
+      }
+
+      if (this.canStandAt(active.x, active.y + stepY)) {
+        active.y += stepY;        
+      }
+    }
+  }
 
     this.characters.forEach((character, index) => {
-      this.labels[index].setPosition(character.x, character.y);
+      this.labels[index].setPosition(character.x, character.y - character.displayHeight / 2);
     });
 
     this.indicator.setPosition(active.x, active.y - 40);
