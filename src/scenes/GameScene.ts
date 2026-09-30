@@ -10,6 +10,11 @@ type TilePosition = {
   row: number;  
 }
 
+type CharacterLocation = {
+  currentTile: TilePosition;
+  reservedTile: TilePosition | null;
+};
+
 export class GameScene extends Phaser.Scene {
   private characters: Phaser.GameObjects.Image[] = [];
   private labels: Phaser.GameObjects.Text[] = [];
@@ -17,6 +22,7 @@ export class GameScene extends Phaser.Scene {
   private indicator!: Phaser.GameObjects.Text;
   private status!: Phaser.GameObjects.Text;
   private route: TilePosition[] = [];
+  private characterLocations: CharacterLocation[] = [];
   private isMoving = false;
 
   private readonly groundMap = [
@@ -107,8 +113,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createCharacters(): void {
-    const spawnA = this.tileCentre(1, 1);
-    const spawnB = this.tileCentre(2, 1);
+    
+    this.characterLocations = [
+      {
+        currentTile: { column: 1, row: 1},
+        reservedTile: null,
+      },
+      {
+        currentTile: { column: 2, row: 1},
+        reservedTile: null,
+      },
+    ];
+
+    const [locationA, locationB] = this.characterLocations;
+
+    const spawnA = this.tileCentre(
+      locationA.currentTile.column,
+      locationA.currentTile.row,
+    )
+
+    const spawnB = this.tileCentre(
+      locationB.currentTile.column,
+      locationB.currentTile.row,
+    )
 
     this.characters = [
       this.add.image(spawnA.x, spawnA.y, 'male-character-01'),
@@ -210,7 +237,7 @@ export class GameScene extends Phaser.Scene {
       ),
     };
 
-    this.route = this.findPath(start, { column, row });
+    this.route = this.findPath(start, { column, row }, this.activeIndex);
     this.followRoute(this.activeIndex);
   }
 
@@ -225,10 +252,15 @@ export class GameScene extends Phaser.Scene {
     this.isMoving = true;
 
     const character = this.characters[characterIndex];
+    const location = this.characterLocations[characterIndex];
     const target = this.tileCentre(next.column, next.row);
 
+    // Treating both tile as occupied during animation
+    // Keep the current tile occupied and reserve the next one.
+    location.reservedTile = next;
+
     const distance = Math.hypot(
-      target.x - character.x,
+      target.x  - character.x,
       target.y - character.y,
     );
 
@@ -238,15 +270,48 @@ export class GameScene extends Phaser.Scene {
       y: target.y,
       duration: distance / SPEED * 1000,
       ease: 'Linear',
+      
       onComplete: () => {
+        location.currentTile = next; // Character has reached this (next) tile
+        location.reservedTile = null; // Character has arrived at this tile, Clear the reservation (set to null)
+
         this.followRoute(characterIndex);
       },
     });
   }
+
+  private isWalkable(column: number, row: number, movingCharacterIndex: number): boolean {
+    
+    if (this.groundMap[row]?.[column] != 1) return false;
+    if (this.hasOtherCharacter(column, row, movingCharacterIndex)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private hasOtherCharacter(column: number, row: number, movingCharacterIndex: number): boolean {
+
+    return this.characterLocations.some((location, index) => {
+      // A character must not block its own movement
+      if (index === movingCharacterIndex) return false;
+
+      const occupiesTile = 
+        location.currentTile.column === column &&
+        location.currentTile.row === row;
+
+      const reservesTile =
+        location.reservedTile != null &&
+        location.reservedTile.column === column &&
+        location.reservedTile.row == row;
+
+      return occupiesTile || reservesTile;
+    })
+  }
   
   /* MOVE CHARACTER ALONG A PATH - [END] */
 
-  private findPath( start:TilePosition, destination: TilePosition) : TilePosition[] {
+  private findPath( start: TilePosition, destination: TilePosition, movingCharacterIndex: number) : TilePosition[] {
     
     const key = (tile: TilePosition) => `${tile.column}, ${tile.row}`;
 
@@ -285,9 +350,9 @@ export class GameScene extends Phaser.Scene {
           row: current.row + direction.row,
         };
 
-        const isGround = this.groundMap[next.row]?.[next.column] === 1;
+        if (previous.has(key(next))) continue;
 
-        if (!isGround || previous.has(key(next))) continue;
+        if (!this.isWalkable(next.column, next.row, movingCharacterIndex)) continue;
 
         previous.set(key(next), current);
         queue.push(next);
@@ -322,7 +387,6 @@ export class GameScene extends Phaser.Scene {
     this.indicator = this.add.text(0, 0, '▼ ACTIVE', {
       fontFamily: 'monospace', fontSize: '16px', color: '#ffffff',
     }).setOrigin(0.5, 1);
-
   }
 
   private select(index: number): void {
