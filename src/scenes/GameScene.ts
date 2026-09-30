@@ -43,6 +43,9 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     this.load.image('platform-tile', '/assets/art/stone_E.png');
     this.load.image('dirt-tile', '/assets/art/dirt_E.png');
+    this.load.image('male-character-01', '/assets/art/Male_0_Idle0.png')
+    this.load.image('male-character-02', '/assets/art/Male_1_Idle0.png')
+
   }
 
   create(): void {
@@ -108,9 +111,9 @@ export class GameScene extends Phaser.Scene {
     const spawnB = this.tileCentre(2, 1);
 
     this.characters = [
-      this.add.image(spawnA.x, spawnA.y, 'character').setTint(0xf0bf75),
+      this.add.image(spawnA.x, spawnA.y, 'male-character-01'),
       
-      this.add.image(spawnB.x, spawnB.y, 'character').setTint(0x83d4da),
+      this.add.image(spawnB.x, spawnB.y, 'male-character-02'),
     ];
 
     this.characters.forEach((character, index) => {
