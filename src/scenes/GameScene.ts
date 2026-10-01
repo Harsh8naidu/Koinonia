@@ -15,6 +15,11 @@ type CharacterLocation = {
   reservedTile: TilePosition | null;
 };
 
+type Cell = {
+  height: number; // Height of gameplay blocks
+  walkable: boolean; // Used for both taller surfaces as well as obstacles
+}
+
 export class GameScene extends Phaser.Scene {
   private characters: Phaser.GameObjects.Image[] = [];
   private labels: Phaser.GameObjects.Text[] = [];
@@ -24,6 +29,14 @@ export class GameScene extends Phaser.Scene {
   private route: TilePosition[] = [];
   private characterLocations: CharacterLocation[] = [];
   private isMoving = false;
+  private cells: (Cell | null)[][] = [];
+
+  // visual settings only
+  private readonly layersPerBlock = 5;
+  private readonly layerSpacing = 6;
+  private readonly baseDirtLayers = 5;
+
+  private readonly blockPixelHeight = this.layersPerBlock * this.layerSpacing;
 
   private readonly groundMap = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -67,12 +80,10 @@ export class GameScene extends Phaser.Scene {
     // Camera
     this.cameras.main.setZoom(0.85);
 
-    // Create Platform
-    this.createPlatform();
-
-    this.createCharacters();
-
-    this.uiElements();
+    this.createLevelData();
+    this.createPlatform(); // Create Platform (Level)
+    this.createCharacters(); // Create Characters
+    this.uiElements(); // In Game UI
     
     // Listen on the focusable canvas only: other page elements keep their keys.
     const canvas = this.game.canvas;
@@ -145,74 +156,120 @@ export class GameScene extends Phaser.Scene {
 
     this.characters.forEach((character, index) => {
       character.setOrigin(0.5, 1);
+
+    const tile = this.characterLocations[index].currentTile;
+
+    character.setDepth(
+      this.tileDepth(tile.column, tile.row) + 1
+    );
       
-      this.labels.push(this.add.text(character.x, character.y, index === 0 ? 'A' : 'B', {
-        fontFamily: 'monospace', 
-        fontSize: '22px', 
-        color: '#10232c',
-      }).setOrigin(0.5));
-    });
+    this.labels.push(this.add.text(character.x, character.y, index === 0 ? 'A' : 'B', {
+      fontFamily: 'monospace', 
+      fontSize: '22px', 
+      color: '#10232c',
+    }).setOrigin(0.5));
+  });
   }
 
   private createPlatform(): void {
     
-    const groundMap = this.groundMap;
-    const scale = this.tileScale;
-    const tileWidth = this.tileWidth;
-    const tileHeight = this.tileHeight;
-    const startX = this.platformX;
-    const startY = this.platformY;
+    this.cells.forEach((row, rowIndex) => {
+      row.forEach((cell, columnIndex) => {
+        if (!cell) return;
 
-    groundMap.forEach((row, rowIndex) => {
-      row.forEach((tile, columnIndex)  => {
-        if(tile === 0) return;
+        const centre = this.tileCentre(columnIndex, rowIndex);
 
-        const x = 
-          startX + (columnIndex - rowIndex) * tileWidth / 2;
+        // Images use their top corner as the vertical origin
+        const topY = centre.y - this.tileHeight/2;
 
-        const y =
-          startY + (columnIndex + rowIndex) * tileHeight / 2;
-        
-        const dirtLayers = 7;
-        const layerSpacing = 6; // Vertical spacing in screen pixels
+        const depth = cell.height === 0
+        // Ordinary floor always stays behind characters
+        ? -20000 + (columnIndex + rowIndex) * 100
+        // Raised blocks can hide characters 
+        : this.tileDepth(columnIndex, rowIndex);
 
-        for (let layer = dirtLayers; layer >= 1; layer--) {
-          this.add.image(x, y + layer * layerSpacing, 'dirt-tile')
+        // Find the main floor's top, ignoring this cell's raised height.
+        const baseTopY =
+          topY + cell.height * this.blockPixelHeight;
+
+        // The foundation always stays behind characters.
+        const foundationDepth =
+          -20000 + (columnIndex + rowIndex) * 100;
+
+        // Dirt goes ONLY below the main floor.
+        for (let layer = this.baseDirtLayers; layer >= 1; layer--) {
+          this.add.image(
+            centre.x,
+            baseTopY + layer * this.layerSpacing,
+            'dirt-tile',
+          )
             .setOrigin(0.5, 0)
-            .setScale(scale)
-            .setDepth(
-              -2000 - layer * 100 + rowIndex + columnIndex,
-            );
+            .setScale(this.tileScale)
+            .setDepth(foundationDepth - 1 - layer * 0.01);
         }
 
-        const stone = this.add.image(x, y, 'platform-tile')
-          .setOrigin(0.5, 0)
-          .setScale(scale)
-          .setDepth(-1000 + rowIndex + columnIndex);
+        // Build raised blocks from stone, starting at the main floor.
+        const raisedLayers = cell.height * this.layersPerBlock;
 
-          const diamond = new Phaser.Geom.Polygon([
-            128, 0,
-            256, 64,
-            128, 128,
-            0, 64,
-          ]);
+        for (let layer = 0; layer < raisedLayers; layer++) {
+          const layerDepth = layer === 0
+            ? foundationDepth
+            : depth - 1 - (raisedLayers - layer) * 0.01;
 
-          stone.setInteractive(diamond, Phaser.Geom.Polygon.Contains);
+          this.add.image(
+            centre.x,
+            baseTopY - layer * this.layerSpacing,
+            'platform-tile',
+          )
+            .setOrigin(0.5, 0)
+            .setScale(this.tileScale)
+            .setDepth(layerDepth);
+        }
 
-          stone.on('pointerover', () => {
-            stone.setTint(0x88ff88);
-          });
+        const stone = this.add.image(
+          centre.x,
+          topY,
+          'platform-tile'
+        ).setOrigin(0.5, 0)
+         .setScale(this.tileScale)
+         .setDepth(depth);
 
-          stone.on('pointerout', () => {
+         // Red is a temporary visual marker for blocked tops
+        if (!cell.walkable) {
+          stone.setTint(0xcc6666);
+        }
+        
+        const diamond = new Phaser.Geom.Polygon([
+          128, 0,
+          256, 64,
+          128, 128,
+          0, 64,
+        ]);
+
+        stone.setInteractive(
+          diamond,
+          Phaser.Geom.Polygon.Contains
+        );
+
+        stone.on('pointerover', () => {
+          const reachable = this.canReachTile(columnIndex, rowIndex);
+          stone.setTint(reachable ? 0x88ff88 : 0xff6666);
+        });
+
+        stone.on('pointerout', () => {
+          if (cell.walkable) {
             stone.clearTint();
-          });
+          } else {
+            stone.setTint(0xcc6666);
+          }
+        });
+        
+        stone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+          if (!pointer.leftButtonDown()) return;
 
-          stone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-            if (!pointer.leftButtonDown()) return;
-
-            this.game.canvas.focus({ preventScroll: true });
-            this.moveToTile(columnIndex, rowIndex);
-          })
+          this.game.canvas.focus({ preventScroll: true });
+          this.moveToTile(columnIndex, rowIndex);
+        });
       });
     });
   }
@@ -221,21 +278,10 @@ export class GameScene extends Phaser.Scene {
 
   private moveToTile(column: number, row: number): void {
     if (this.isMoving) return;
-    if (this.groundMap[row]?.[column] != 1) return;
+    if (!this.isWalkable(column, row, this.activeIndex)) return;
 
-    const character = this.characters[this.activeIndex];
-
-    const offsetX = character.x - this.platformX;
-    const offsetY = character.y - this.platformY;
-
-    const start: TilePosition = {
-      column: Math.floor(
-        offsetX / this.tileWidth + offsetY / this.tileHeight,
-      ),
-      row: Math.floor(
-        offsetY / this.tileHeight - offsetX / this.tileWidth,
-      ),
-    };
+   const start = 
+    this.characterLocations[this.activeIndex].currentTile;
 
     this.route = this.findPath(start, { column, row }, this.activeIndex);
     this.followRoute(this.activeIndex);
@@ -243,35 +289,81 @@ export class GameScene extends Phaser.Scene {
 
   private followRoute(characterIndex: number): void {
     const next = this.route.shift();
+    const location = this.characterLocations[characterIndex];
 
     if (!next) {
       this.isMoving = false;
       return;
     }
 
-    this.isMoving = true;
+    const from = location.currentTile;
+
+    // Recheck before every step
+    if (!this.canStep(from, next, characterIndex)) {
+      this.route = [];
+      this.isMoving = false;
+      return;
+    }
+
+    const fromCell = this.getCell(from.column, from.row);
+    const toCell   = this.getCell(next.column, next.row);
+
+    if (!fromCell || !toCell) {
+      return;
+    }
 
     const character = this.characters[characterIndex];
-    const location = this.characterLocations[characterIndex];
-    const target = this.tileCentre(next.column, next.row);
+    const target    = this.tileCentre(next.column, next.row);
+
+    const startX = character.x;
+    const startY = character.y;
+
+    const isJump = fromCell.height !== toCell.height;
+
+    // Additional lift above the line connecting both surfaces
+    const jumpHeight = isJump ? this.blockPixelHeight + 12 : 0;
+
+    const stepDistance = Math.hypot(
+      this.tileWidth / 2,
+      this.tileHeight / 2,
+    );
+
+    const startDepth = this.tileDepth(from.column, from.row);
+    const endDepth   = this.tileDepth(next.column, next.row);
+
+    this.isMoving = true;
 
     // Treating both tile as occupied during animation
     // Keep the current tile occupied and reserve the next one.
     location.reservedTile = next;
 
-    const distance = Math.hypot(
-      target.x  - character.x,
-      target.y - character.y,
-    );
+    // Animate a value from 0 to 1, then calculate the position
+    const progress = { value: 0 };
 
     this.tweens.add({
-      targets: character,
-      x: target.x,
-      y: target.y,
-      duration: distance / SPEED * 1000,
+      targets: progress,
+      value: 1,
+      duration: isJump ? 350 : stepDistance / SPEED * 1000,
       ease: 'Linear',
+
+      onUpdate: () => {
+        const t = progress.value;
+
+        character.x = Phaser.Math.Linear(startX, target.x, t);
+
+        character.y = 
+          Phaser.Math.Linear(startY, target.y, t)
+          - Math.sin(Math.PI * t) * jumpHeight;
+
+        character.setDepth(
+          Phaser.Math.Linear(startDepth, endDepth, t) + 1,
+        );
+      },
       
       onComplete: () => {
+        character.setPosition(target.x, target.y);
+        character.setDepth(endDepth + 1);
+
         location.currentTile = next; // Character has reached this (next) tile
         location.reservedTile = null; // Character has arrived at this tile, Clear the reservation (set to null)
 
@@ -282,12 +374,11 @@ export class GameScene extends Phaser.Scene {
 
   private isWalkable(column: number, row: number, movingCharacterIndex: number): boolean {
     
-    if (this.groundMap[row]?.[column] != 1) return false;
-    if (this.hasOtherCharacter(column, row, movingCharacterIndex)) {
-      return false;
-    }
+    if (!this.getCell(column, row)) return false;
+    if (this.hasObstacle(column, row)) return false;
 
-    return true;
+    // Ground exist, no obstacle -> check whether character can occupy it
+    return !this.hasOtherCharacter(column, row, movingCharacterIndex);
   }
 
   private hasOtherCharacter(column: number, row: number, movingCharacterIndex: number): boolean {
@@ -300,13 +391,54 @@ export class GameScene extends Phaser.Scene {
         location.currentTile.column === column &&
         location.currentTile.row === row;
 
-      const reservesTile =
+      const reservedTile =
         location.reservedTile != null &&
         location.reservedTile.column === column &&
         location.reservedTile.row == row;
 
-      return occupiesTile || reservesTile;
+      return occupiesTile || reservedTile;
     })
+  }
+
+  private canStep(from: TilePosition, to: TilePosition, movingCharacterIndex: number) : boolean {
+
+    // Only directly neighbouring cells are allowed
+    const separation = 
+      Math.abs(to.column - from.column) +
+      Math.abs(to.row - from.row);
+
+      if (separation != 1) return false;
+
+      const fromCell = this.getCell(from.column, from.row);
+      const toCell = this.getCell(to.column, to.row);
+
+      if (!fromCell || !toCell) return false;
+
+      if (!this.isWalkable(to.column, to.row, movingCharacterIndex)) return false;
+
+      return Math.abs(toCell.height - fromCell.height) <= 1;
+  }
+
+  private canReachTile(column: number, row: number): boolean {
+
+    if (!this.isWalkable(column, row, this.activeIndex)) {
+      return false;
+    }
+
+    const start = this.characterLocations[this.activeIndex].currentTile;
+
+    // Already standing here - no route is needed
+    if (start.column === column && start.row === row) {
+      return true;
+    }
+
+    const path = this.findPath(
+      start,
+      { column, row },
+      this.activeIndex
+    );
+
+    return path.length > 0;
   }
   
   /* MOVE CHARACTER ALONG A PATH - [END] */
@@ -352,7 +484,7 @@ export class GameScene extends Phaser.Scene {
 
         if (previous.has(key(next))) continue;
 
-        if (!this.isWalkable(next.column, next.row, movingCharacterIndex)) continue;
+        if (!this.canStep(current, next, movingCharacterIndex)) continue;
 
         previous.set(key(next), current);
         queue.push(next);
@@ -367,14 +499,57 @@ export class GameScene extends Phaser.Scene {
 
   // Find the centre of a tile's top surface
   private tileCentre(column: number, row: number) {
-    return {
-      x: this.platformX + (column - row) * this.tileWidth / 2,
+    const height = this.getCell(column, row)?.height ?? 0;
 
-      y : this.platformY + (column + row + 1) * this.tileHeight / 2,
+    return {
+      x: this.platformX 
+        + (column - row) * this.tileWidth / 2,
+
+      y: this.platformY 
+        + (column + row + 1) * this.tileHeight / 2
+        - height * this.blockPixelHeight,
     };
   }
 
-  /* BINDING/RESTRICTING CHARACTER MOVEMENT TO THE PLATFORM PER TILE - [END] */
+  private tileDepth(column: number, row: number): number {
+    return -10000 + (column + row) * 100;
+  }
+
+  /* CREATE LEVEL DATA - PARTICULAR SURFACE IS WALKABLE OR NOT - [START] */
+
+  private createLevelData(): void {
+    this.cells = this.groundMap.map(row =>
+      row.map(value =>
+        value === 1 ? {height: 0, walkable: true} : null
+      )
+    );
+
+    // Test layout: Remember cells[row][column]
+
+    // A one-block step.
+    this.cells[2][3] = { height: 1, walkable: true };
+
+    // A two-block platform reachable through that step.
+    this.cells[2][4] = { height: 2, walkable: true };
+
+    // An obstacle: its top cannot be used.
+    this.cells[3][2] = { height: 1, walkable: false };
+
+    // An isolated two-block platform with no step beside it.
+    this.cells[6][8] = { height: 2, walkable: true };
+  }
+
+  private getCell(column: number, row: number): Cell | null {
+    return this.cells[row]?.[column] ?? null;
+  }
+
+  private hasObstacle(column: number, row: number): boolean {
+    const cell = this.cells[row]?.[column] ?? null;
+    
+    return cell !== null && !cell.walkable;
+  }
+
+  /* CREATE LEVEL DATA - PARTICULAR SURFACE IS WALKABLE OR NOT - [END] */
 
   private uiElements(): void {
     this.add.text(-80, -30, 'FOUNDATION / 01', {
@@ -409,8 +584,9 @@ export class GameScene extends Phaser.Scene {
     this.characters.forEach((character, index) => {
       this.labels[index].setPosition(
         character.x, 
-        character.y - character.displayHeight / 2
-      );
+        character.y - character.displayHeight / 2,
+      )
+      .setDepth(character.depth + 1);
     });
 
     this.indicator.setPosition(
