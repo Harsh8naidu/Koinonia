@@ -21,7 +21,7 @@ type Cell = {
 }
 
 export class GameScene extends Phaser.Scene {
-  private characters: Phaser.GameObjects.Image[] = [];
+  private characters: Phaser.GameObjects.Sprite[] = [];
   private labels: Phaser.GameObjects.Text[] = [];
   private activeIndex = 0;
   private indicator!: Phaser.GameObjects.Text;
@@ -62,9 +62,15 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     this.load.image('platform-tile', '/assets/art/stone_E.png');
     this.load.image('dirt-tile', '/assets/art/dirt_E.png');
-    this.load.image('male-character-01', '/assets/art/Male_0_Idle0.png')
-    this.load.image('male-character-02', '/assets/art/Male_1_Idle0.png')
+    
+    for (let frame = 0; frame <= 20; frame++) {
+      const number = frame.toString().padStart(2, '0');
 
+      this.load.image(
+        `robot-idle-${frame}`,
+        `/assets/art/Character_Idle/Armature_Idle_${number}.png`
+      );
+    }
   }
 
   create(): void {
@@ -82,7 +88,10 @@ export class GameScene extends Phaser.Scene {
 
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
+
+    this.createRobotAnimations();
     this.createCharacters(); // Create Characters
+
     this.uiElements(); // In Game UI
     
     // Listen on the focusable canvas only: other page elements keep their keys.
@@ -149,13 +158,14 @@ export class GameScene extends Phaser.Scene {
     )
 
     this.characters = [
-      this.add.image(spawnA.x, spawnA.y, 'male-character-01'),
-      
-      this.add.image(spawnB.x, spawnB.y, 'male-character-02'),
+     this.add.sprite(spawnA.x, spawnA.y, 'robot-idle-0'),
+     this.add.sprite(spawnB.x, spawnB.y, 'robot-idle-0')
     ];
 
     this.characters.forEach((character, index) => {
-      character.setOrigin(0.5, 1);
+      character.setScale(0.25);
+      character.setOrigin(0.5, 0.7);
+      character.play('robot-idle')
 
     const tile = this.characterLocations[index].currentTile;
 
@@ -164,11 +174,31 @@ export class GameScene extends Phaser.Scene {
     );
       
     this.labels.push(this.add.text(character.x, character.y, index === 0 ? 'A' : 'B', {
-      fontFamily: 'monospace', 
-      fontSize: '22px', 
-      color: '#10232c',
-    }).setOrigin(0.5));
-  });
+        fontFamily: 'monospace', 
+        fontSize: '22px', 
+        color: '#10232c',
+      }).setOrigin(0.5));
+    });
+  }
+
+  private createRobotAnimations(): void {
+    // Do not create it twice if the scene restarts
+    if (this.anims.exists('robot-idle')) return;
+
+    const frames = [];
+
+    for (let frame = 0; frame <= 20; frame++) {
+      frames.push({
+        key: `robot-idle-${frame}`,
+      });
+    }
+
+    this.anims.create({
+      key: 'robot-idle',
+      frames: frames,
+      frameRate: 12,
+      repeat: -1
+    })
   }
 
   private createPlatform(): void {
@@ -584,14 +614,14 @@ export class GameScene extends Phaser.Scene {
     this.characters.forEach((character, index) => {
       this.labels[index].setPosition(
         character.x, 
-        character.y - character.displayHeight / 2,
+        character.y - 40,
       )
       .setDepth(character.depth + 1);
     });
 
     this.indicator.setPosition(
       active.x, 
-      active.y - active.displayHeight - 12
+      active.y - 100
     );
   }
 }
