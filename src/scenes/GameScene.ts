@@ -30,6 +30,7 @@ export class GameScene extends Phaser.Scene {
   private characterLocations: CharacterLocation[] = [];
   private isMoving = false;
   private cells: (Cell | null)[][] = [];
+  private characterViews: ('front-right' | 'back-right')[] = [];
 
   // visual settings only
   private readonly layersPerBlock = 5;
@@ -63,14 +64,23 @@ export class GameScene extends Phaser.Scene {
     this.load.image('platform-tile', '/assets/art/stone_E.png');
     this.load.image('dirt-tile', '/assets/art/dirt_E.png');
     
-    for (let frame = 0; frame <= 20; frame++) {
-      const number = frame.toString().padStart(2, '0');
+    this.load.spritesheet(
+      'hooded-front-right',
+      '/assets/art/hooded/CloakCharacter_315.png',
+      {
+        frameWidth: 90,
+        frameHeight: 90,
+      },
+    );
 
-      this.load.image(
-        `robot-idle-${frame}`,
-        `/assets/art/Character_Idle/Armature_Idle_${number}.png`
-      );
-    }
+    this.load.spritesheet(
+      'hooded-back-right',
+      '/assets/art/hooded/CloakCharacter_45.png',
+      {
+        frameWidth: 90,
+        frameHeight: 90,
+      }
+    )
   }
 
   create(): void {
@@ -89,7 +99,7 @@ export class GameScene extends Phaser.Scene {
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
 
-    this.createRobotAnimations();
+    this.createCharacterAnimations();
     this.createCharacters(); // Create Characters
 
     this.uiElements(); // In Game UI
@@ -157,15 +167,17 @@ export class GameScene extends Phaser.Scene {
       locationB.currentTile.row,
     )
 
+    this.characterViews = ['front-right', 'front-right'];
+
     this.characters = [
-     this.add.sprite(spawnA.x, spawnA.y, 'robot-idle-0'),
-     this.add.sprite(spawnB.x, spawnB.y, 'robot-idle-0')
+     this.add.sprite(spawnA.x, spawnA.y, 'hooded-front-right'),
+     this.add.sprite(spawnB.x, spawnB.y, 'hooded-front-right')
     ];
 
     this.characters.forEach((character, index) => {
-      character.setScale(0.25);
-      character.setOrigin(0.5, 0.7);
-      character.play('robot-idle')
+      character.setScale(1);
+      character.setOrigin(0.5, 0.9);
+      character.play('idle-front-right')
 
     const tile = this.characterLocations[index].currentTile;
 
@@ -181,24 +193,72 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private createRobotAnimations(): void {
-    // Do not create it twice if the scene restarts
-    if (this.anims.exists('robot-idle')) return;
+  private createCharacterAnimations(): void {
+    const views = ['front-right', 'back-right'];
 
-    const frames = [];
+    for (const view of views) {
+      const sheet = `hooded-${view}`;
 
-    for (let frame = 0; frame <= 20; frame++) {
-      frames.push({
-        key: `robot-idle-${frame}`,
-      });
+      if (!this.anims.exists(`idle-${view}`)) {
+        this.anims.create({
+          key: `idle-${view}`,
+          frames: this.anims.generateFrameNumbers(sheet, {
+            start: 0,
+            end: 3,
+          }),
+          frameRate: 6,
+          repeat: -1,
+        });
+      }
+
+      if (!this.anims.exists(`walk-${view}`)) {
+        this.anims.create({
+          key: `walk-${view}`,
+          frames: this.anims.generateFrameNumbers(sheet, {
+            start: 4,
+            end: 7,
+          }),
+          frameRate: 8,
+          repeat: -1,
+        })
+      }
     }
+  }
 
-    this.anims.create({
-      key: 'robot-idle',
-      frames: frames,
-      frameRate: 12,
-      repeat: -1
-    })
+  private stopCharacterMovement(characterIndex: number): void {
+    this.route = [];
+    this.isMoving = false;
+
+    this.characterLocations[characterIndex].reservedTile = null;
+
+    const view = this.characterViews[characterIndex];
+
+    this.characters[characterIndex].play(`idle-${view}`, true);
+  }
+
+  private faceNextTile(characterIndex: number, from: TilePosition, next: TilePosition): void {
+    
+    const character = this.characters[characterIndex];
+
+    if (next.column > from.column) {
+      // Down-right
+      this.characterViews[characterIndex] = 'front-right';
+      character.setFlipX(false);
+    } else if (next.row > from.row) {
+      // Down-left.
+      this.characterViews[characterIndex] = 'front-right';
+      character.setFlipX(true);
+
+    } else if (next.row < from.row) {
+      // Up-right.
+      this.characterViews[characterIndex] = 'back-right';
+      character.setFlipX(false);
+
+    } else {
+      // Up-left.
+      this.characterViews[characterIndex] = 'back-right';
+      character.setFlipX(true);
+  }
   }
 
   private createPlatform(): void {
@@ -322,7 +382,7 @@ export class GameScene extends Phaser.Scene {
     const location = this.characterLocations[characterIndex];
 
     if (!next) {
-      this.isMoving = false;
+      this.stopCharacterMovement(characterIndex);
       return;
     }
 
@@ -330,8 +390,7 @@ export class GameScene extends Phaser.Scene {
 
     // Recheck before every step
     if (!this.canStep(from, next, characterIndex)) {
-      this.route = [];
-      this.isMoving = false;
+      this.stopCharacterMovement(characterIndex);
       return;
     }
 
@@ -339,6 +398,7 @@ export class GameScene extends Phaser.Scene {
     const toCell   = this.getCell(next.column, next.row);
 
     if (!fromCell || !toCell) {
+      this.stopCharacterMovement(characterIndex);
       return;
     }
 
@@ -349,6 +409,18 @@ export class GameScene extends Phaser.Scene {
     const startY = character.y;
 
     const isJump = fromCell.height !== toCell.height;
+
+    this.faceNextTile(characterIndex, from, next);
+
+    const view = this.characterViews[characterIndex];
+
+    if (isJump) {
+      // Still pose but face correct way while jumping
+      character.anims.stop();
+      character.setTexture(`hooded-${view}`, 0);
+    } else {
+      character.play(`walk-${view}`, true);
+    }
 
     // Additional lift above the line connecting both surfaces
     const jumpHeight = isJump ? this.blockPixelHeight + 12 : 0;
