@@ -56,8 +56,16 @@ export class GameScene extends Phaser.Scene {
   // Art Assets
   preload(): void {
     this.load.image('platform-tile', '/assets/art/platform/isometric_0014.png');
-    this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0053.png')
-    this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG')
+    this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0053.png');
+    this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG');
+
+    this.load.spritesheet('teleport', 
+      'assets/art/navigation/teleport_512.png',
+    {
+      frameWidth: 512,
+      frameHeight: 256,
+    },
+  );
     
     this.load.spritesheet(
       'hooded-front-right',
@@ -94,6 +102,12 @@ export class GameScene extends Phaser.Scene {
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
 
+    // Platform Navigation
+    this.createTeleportAnimation();
+    this.createTeleport(8, 6);
+    this.createTeleport(4, 2);
+
+    // Create and Animate Characters    
     this.createCharacterAnimations();
     this.createCharacters(); // Create Characters
 
@@ -256,6 +270,8 @@ export class GameScene extends Phaser.Scene {
   }
   }
 
+  /* CREATE PLATFORM - [START] */
+
   private createPlatform(): void {
     
     this.cells.forEach((row, rowIndex) => {
@@ -364,6 +380,75 @@ export class GameScene extends Phaser.Scene {
   private hasTileAbove(level: number, stackHeight: number): boolean {
     return level < stackHeight;
   }
+
+  /* CREATE PLATFORM - [END] */
+
+  /* CREATE LEVEL DATA - PARTICULAR SURFACE IS WALKABLE OR NOT - [START] */
+
+  private createLevelData(): void {
+    this.cells = this.groundMap.map(row =>
+      row.map(value =>
+        value === 1 ? {height: 0, walkable: true} : null
+      )
+    );
+
+    // Test layout: Remember cells[row][column]
+
+    // A one-block step.
+    this.cells[2][3] = { height: 1, walkable: true };
+
+    // A two-block platform reachable through that step.
+    this.cells[2][4] = { height: 2, walkable: true };
+
+    // An obstacle: its top cannot be used.
+    this.cells[3][2] = { height: 1, walkable: false };
+
+    // An isolated two-block platform with no step beside it.
+    this.cells[6][8] = { height: 2, walkable: true };
+  }
+
+  private getCell(column: number, row: number): Cell | null {
+    return this.cells[row]?.[column] ?? null;
+  }
+
+  private hasObstacle(column: number, row: number): boolean {
+    const cell = this.cells[row]?.[column] ?? null;
+    
+    return cell !== null && !cell.walkable;
+  }
+
+  /* CREATE LEVEL DATA - PARTICULAR SURFACE IS WALKABLE OR NOT - [END] */
+
+  /* PLATFORM NAVIGATION - [START] */
+
+  private createTeleportAnimation(): void {
+    if (this.anims.exists('teleport-active')) return;
+
+    this.anims.create({
+      key: 'teleport-active',
+      frames: this.anims.generateFrameNumbers('teleport', {
+        start: 1,
+        end: 4,
+      }),
+      frameRate: 6,
+      repeat: -1
+    });
+  }
+
+  private createTeleport(column: number, row: number): void {
+    const cell = this.getCell(column, row);
+    if (!cell || !cell.walkable) return;
+
+    const centre = this.tileCentre(column, row);
+
+    this.add.sprite(centre.x, centre.y, 'teleport', 1)
+      .setOrigin(0.5)
+      .setScale(0.14)
+      .setDepth(this.tileDepth(column, row) + 0.5)
+      .play('teleport-active');
+  }
+
+  /* PLATFORM NAVIGATION - [END] */
 
   /* MOVE CHARACTER ALONG A PATH - [START] */
 
@@ -617,42 +702,6 @@ export class GameScene extends Phaser.Scene {
   private tileDepth(column: number, row: number): number {
     return -10000 + (column + row) * 100;
   }
-
-  /* CREATE LEVEL DATA - PARTICULAR SURFACE IS WALKABLE OR NOT - [START] */
-
-  private createLevelData(): void {
-    this.cells = this.groundMap.map(row =>
-      row.map(value =>
-        value === 1 ? {height: 0, walkable: true} : null
-      )
-    );
-
-    // Test layout: Remember cells[row][column]
-
-    // A one-block step.
-    this.cells[2][3] = { height: 1, walkable: true };
-
-    // A two-block platform reachable through that step.
-    this.cells[2][4] = { height: 2, walkable: true };
-
-    // An obstacle: its top cannot be used.
-    this.cells[3][2] = { height: 1, walkable: false };
-
-    // An isolated two-block platform with no step beside it.
-    this.cells[6][8] = { height: 2, walkable: true };
-  }
-
-  private getCell(column: number, row: number): Cell | null {
-    return this.cells[row]?.[column] ?? null;
-  }
-
-  private hasObstacle(column: number, row: number): boolean {
-    const cell = this.cells[row]?.[column] ?? null;
-    
-    return cell !== null && !cell.walkable;
-  }
-
-  /* CREATE LEVEL DATA - PARTICULAR SURFACE IS WALKABLE OR NOT - [END] */
 
   private uiElements(): void {
     this.add.text(-80, -30, 'FOUNDATION / 01', {
