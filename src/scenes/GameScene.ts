@@ -32,13 +32,6 @@ export class GameScene extends Phaser.Scene {
   private cells: (Cell | null)[][] = [];
   private characterViews: ('front-right' | 'back-right')[] = [];
 
-  // visual settings only
-  private readonly layersPerBlock = 5;
-  private readonly layerSpacing = 6;
-  private readonly baseDirtLayers = 5;
-
-  private readonly blockPixelHeight = this.layersPerBlock * this.layerSpacing;
-
   private readonly groundMap = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -52,17 +45,19 @@ export class GameScene extends Phaser.Scene {
   ];
 
   private readonly tileScale = 0.5;
-  private readonly tileWidth = 256 * this.tileScale;
-  private readonly tileHeight = 128 * this.tileScale;
+  private readonly blockPixelHeight = 93 * this.tileScale;
+  private readonly tileWidth = 160 * this.tileScale;
+  private readonly tileHeight = 92 * this.tileScale;
   private readonly platformX = 600;
-  private readonly platformY = 100;
+  private readonly platformY = 140;
 
   constructor() { super('Game'); }
 
   // Art Assets
   preload(): void {
-    this.load.image('platform-tile', '/assets/art/stone_E.png');
-    this.load.image('dirt-tile', '/assets/art/dirt_E.png');
+    this.load.image('platform-tile', '/assets/art/platform/isometric_0014.png');
+    this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0053.png')
+    this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG')
     
     this.load.spritesheet(
       'hooded-front-right',
@@ -94,7 +89,7 @@ export class GameScene extends Phaser.Scene {
     //const floor = this.physics.add.staticImage(640, 680, 'floor');
 
     // Camera
-    this.cameras.main.setZoom(0.85);
+    this.cameras.main.setZoom(1.3);
 
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
@@ -278,83 +273,70 @@ export class GameScene extends Phaser.Scene {
         // Raised blocks can hide characters 
         : this.tileDepth(columnIndex, rowIndex);
 
-        // Find the main floor's top, ignoring this cell's raised height.
+        // Undo the height offset to find the main floor position.
         const baseTopY =
           topY + cell.height * this.blockPixelHeight;
 
-        // The foundation always stays behind characters.
-        const foundationDepth =
-          -20000 + (columnIndex + rowIndex) * 100;
+        // Draw everything underneath the final top block.
+        for (let level = 0; level < cell.height; level++) {
+          const supportY =
+            baseTopY - level * this.blockPixelHeight;
 
-        // Dirt goes ONLY below the main floor.
-        for (let layer = this.baseDirtLayers; layer >= 1; layer--) {
-          this.add.image(
-            centre.x,
-            baseTopY + layer * this.layerSpacing,
-            'dirt-tile',
-          )
-            .setOrigin(0.5, 0)
+          const supportDepth = level === 0
+            // Ground-level block stays behind characters.
+            ? -20000 + (columnIndex + rowIndex) * 100
+            // Higher supports stay behind this column's top block.
+            : depth - (cell.height - level);
+
+            const supportTexture = this.textureForLevel(level, cell.height);
+
+          this.add.image(centre.x, supportY, supportTexture)
+            .setDisplayOrigin(94, 3)
             .setScale(this.tileScale)
-            .setDepth(foundationDepth - 1 - layer * 0.01);
+            .setDepth(supportDepth);
         }
 
-        // Build raised blocks from stone, starting at the main floor.
-        const raisedLayers = cell.height * this.layersPerBlock;
+        const topTexture = this.textureForLevel(cell.height, cell.height);
 
-        for (let layer = 0; layer < raisedLayers; layer++) {
-          const layerDepth = layer === 0
-            ? foundationDepth
-            : depth - 1 - (raisedLayers - layer) * 0.01;
-
-          this.add.image(
-            centre.x,
-            baseTopY - layer * this.layerSpacing,
-            'platform-tile',
-          )
-            .setOrigin(0.5, 0)
-            .setScale(this.tileScale)
-            .setDepth(layerDepth);
-        }
-
-        const stone = this.add.image(
+        const basePlatform = this.add.image(
           centre.x,
           topY,
-          'platform-tile'
-        ).setOrigin(0.5, 0)
+          topTexture
+        ).setDisplayOrigin(94, 3)
          .setScale(this.tileScale)
          .setDepth(depth);
 
          // Red is a temporary visual marker for blocked tops
         if (!cell.walkable) {
-          stone.setTint(0xcc6666);
+          basePlatform.setTint(0xcc6666);
         }
         
         const diamond = new Phaser.Geom.Polygon([
-          128, 0,
-          256, 64,
-          128, 128,
-          0, 64,
+          94, 3,
+          174, 49,
+          94, 95,
+          14, 49,
         ]);
 
-        stone.setInteractive(
+        basePlatform.setInteractive(
           diamond,
           Phaser.Geom.Polygon.Contains
         );
 
-        stone.on('pointerover', () => {
+        basePlatform.on('pointerover', () => {
           const reachable = this.canReachTile(columnIndex, rowIndex);
-          stone.setTint(reachable ? 0x88ff88 : 0xff6666);
+          basePlatform.setTint(reachable ? 0x88ff88 : 0xff6666);
         });
 
-        stone.on('pointerout', () => {
+        basePlatform.on('pointerout', () => {
           if (cell.walkable) {
-            stone.clearTint();
+            basePlatform.clearTint();
           } else {
-            stone.setTint(0xcc6666);
+            basePlatform.setTint(0xcc6666);
           }
         });
         
-        stone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        basePlatform.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
           if (!pointer.leftButtonDown()) return;
 
           this.game.canvas.focus({ preventScroll: true });
@@ -362,6 +344,25 @@ export class GameScene extends Phaser.Scene {
         });
       });
     });
+  }
+
+  private textureForLevel(level: number, stackHeight: number): string {
+
+    if (level === 0) {
+      return 'platform-tile';
+    }
+
+    if (level === 1) {
+      return this.hasTileAbove(level, stackHeight)
+        ? 'rock-tile'
+        : 'rock-grass-tile';
+    }
+
+    return 'rock-grass-tile'; // Level 2 and above
+  }
+
+  private hasTileAbove(level: number, stackHeight: number): boolean {
+    return level < stackHeight;
   }
 
   /* MOVE CHARACTER ALONG A PATH - [START] */
