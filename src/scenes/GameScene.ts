@@ -31,6 +31,7 @@ export class GameScene extends Phaser.Scene {
   private isMoving = false;
   private cells: (Cell | null)[][] = [];
   private characterViews: ('front-right' | 'back-right')[] = [];
+  private teleportTiles: TilePosition[] = [];
 
   private readonly groundMap = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -103,6 +104,8 @@ export class GameScene extends Phaser.Scene {
     this.createPlatform(); // Create Platform (Level)
 
     // Platform Navigation
+    this. teleportTiles = [];
+
     this.createTeleportAnimation();
     this.createTeleport(8, 6);
     this.createTeleport(4, 2);
@@ -446,6 +449,78 @@ export class GameScene extends Phaser.Scene {
       .setScale(0.14)
       .setDepth(this.tileDepth(column, row) + 0.5)
       .play('teleport-active');
+
+    this.teleportTiles.push({ column, row });
+  }
+
+  private tryTeleport(characterIndex: number): boolean {
+    if (this.teleportTiles.length !== 2) return false;
+
+    const location = this.characterLocations[characterIndex];
+    const current = location.currentTile;
+
+    // Is the character standing on either portal????
+    const portalIndex = this.teleportTiles.findIndex(tile =>
+      tile.column === current.column &&
+      tile.row === current.row
+    );
+
+    if (portalIndex === -1) return false;
+
+    // Portal 0 leads to portal 1, and portal 1 leads to portal 0
+    const destination = this.teleportTiles[portalIndex === 0 ? 1 : 0];
+
+    // Check whether another character occupies or reserves the portal
+    if (!this.isWalkable(
+      destination.column,
+      destination.row,
+      characterIndex,
+    )) {
+      return false;
+    }
+
+    // Cancel the remaining walking route and play the idle animation
+    this.stopCharacterMovement(characterIndex);
+
+    // Keep movement locked until the character has completely teleported
+    this.isMoving = true;
+    location.reservedTile = destination;
+
+    const character = this.characters[characterIndex];
+    const centre = this.tileCentre(
+      destination.column,
+      destination.row,
+    );
+
+    this.tweens.add({
+      targets: character,
+      alpha: 0,
+      duration: 500,
+      ease: 'Linear',
+
+      onComplete: () => {
+        // The character is invisible now ----->>>>> move it to the other portal
+        character.setPosition(centre.x, centre.y);
+        character.setDepth(
+          this.tileDepth(destination.column, destination.row) + 1
+        );
+        
+        location.currentTile = { ...destination };
+
+        this.tweens.add({
+          targets: character,
+          alpha: 1,
+          duration: 500,
+          ease: 'Linear',
+
+          onComplete: () => {
+            this.stopCharacterMovement(characterIndex);
+          }
+        });
+      }
+    });
+
+    return true;
   }
 
   /* PLATFORM NAVIGATION - [END] */
@@ -456,8 +531,12 @@ export class GameScene extends Phaser.Scene {
     if (this.isMoving) return;
     if (!this.isWalkable(column, row, this.activeIndex)) return;
 
-   const start = 
-    this.characterLocations[this.activeIndex].currentTile;
+   const start = this.characterLocations[this.activeIndex].currentTile;
+
+    if (start.column === column && start.row == row) {
+      this.tryTeleport(this.activeIndex);
+      return;
+    }
 
     this.route = this.findPath(start, { column, row }, this.activeIndex);
     this.followRoute(this.activeIndex);
@@ -554,6 +633,9 @@ export class GameScene extends Phaser.Scene {
 
         location.currentTile = next; // Character has reached this (next) tile
         location.reservedTile = null; // Character has arrived at this tile, Clear the reservation (set to null)
+
+        // Portal takes over movement and cancels the remaining route
+        if (this.tryTeleport(characterIndex)) return;
 
         this.followRoute(characterIndex);
       },
@@ -738,8 +820,11 @@ export class GameScene extends Phaser.Scene {
         character.x, 
         character.y - 40,
       )
-      .setDepth(character.depth + 1);
+      .setDepth(character.depth + 1)
+      .setAlpha(character.alpha);
     });
+
+    this.indicator.setAlpha(active.alpha);
 
     this.indicator.setPosition(
       active.x, 
