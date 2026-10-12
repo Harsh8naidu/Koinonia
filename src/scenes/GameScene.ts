@@ -98,7 +98,31 @@ export class GameScene extends Phaser.Scene {
     //const floor = this.physics.add.staticImage(640, 680, 'floor');
 
     // Camera
-    this.cameras.main.setZoom(1.3);
+    const resizeCamera = () => {
+      const widthRatio = this.scale.width / 1280;
+      const heightRatio = this.scale.height / 720;
+      const screenScale = Math.min(widthRatio, heightRatio, 1);
+
+      const usesTouch = window.matchMedia('(pointer: coarse)').matches;
+
+      // Adjust this number to change the mobile zoom
+      const mobileZoomMultiplier = 1.3;
+
+      const zoom = usesTouch
+        ? 1.3 * screenScale * mobileZoomMultiplier
+        : 1.3 * screenScale;
+
+      this.cameras.main.setZoom(zoom);
+      this.cameras.main.centerOn(640, 360);
+    }
+
+    resizeCamera();
+
+    this.scale.on(Phaser.Scale.Events.RESIZE, resizeCamera);
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, resizeCamera);
+    })
 
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
