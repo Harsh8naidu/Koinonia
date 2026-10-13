@@ -15,6 +15,12 @@ type CharacterLocation = {
   reservedTile: TilePosition | null;
 };
 
+type PushBox = {
+  sprite: Phaser.GameObjects.Image;
+  currentTile: TilePosition;
+  reservedTile: TilePosition | null;
+}
+
 type Cell = {
   height: number; // Height of gameplay blocks
   walkable: boolean; // Used for both taller surfaces as well as obstacles
@@ -28,10 +34,16 @@ export class GameScene extends Phaser.Scene {
   private status!: Phaser.GameObjects.Text;
   private route: TilePosition[] = [];
   private characterLocations: CharacterLocation[] = [];
+  private boxes: PushBox[] = [];
   private isMoving = false;
   private cells: (Cell | null)[][] = [];
   private characterViews: ('front-right' | 'back-right')[] = [];
   private teleportTiles: TilePosition[] = [];
+  private baseCameraZoom = 1;
+  private zoomMultiplier = 1;
+
+  private pinching = false;
+  private touchStartTile: TilePosition | null = null;
 
   private readonly groundMap = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -59,6 +71,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image('platform-tile', '/assets/art/platform/isometric_0014.png');
     this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0053.png');
     this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG');
+    this.load.image('box', '/assets/art/navigation/isometric_0086.png')
 
     this.load.spritesheet('teleport', 
       'assets/art/navigation/teleport_512.png',
@@ -112,7 +125,9 @@ export class GameScene extends Phaser.Scene {
         ? 1.3 * screenScale * mobileZoomMultiplier
         : 1.3 * screenScale;
 
-      this.cameras.main.setZoom(zoom);
+      this.baseCameraZoom = zoom;
+      this.applyCameraZoom();
+
       this.cameras.main.centerOn(640, 360);
     }
 
@@ -123,6 +138,8 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, resizeCamera);
     })
+
+    this.setupZoomControls();
 
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
@@ -137,6 +154,12 @@ export class GameScene extends Phaser.Scene {
     // Create and Animate Characters    
     this.createCharacterAnimations();
     this.createCharacters(); // Create Characters
+
+    // Only the frontmost interactive objects receives the click
+    this.input.setTopOnly(true);
+
+    this.boxes = [];
+    this.createBox(7, 2);
 
     this.uiElements(); // In Game UI
     
@@ -176,6 +199,109 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.select(0);
+  }
+
+  // ADJUST ZOOM FOR ANDROID AND PC
+  private setupZoomControls(): void {
+    const first = this.input.pointer1;
+    const second = this.input.pointer2;
+
+    let previousDistance = 0;
+
+    const fingerDistance = () => {
+      return Phaser.Math.Distance.Between(
+        first.x,
+        first.y,
+        second.x,
+        second.y
+      );
+    };
+
+    const onWheel = (
+      _pointer = Phaser.Input.Pointer,
+      _objects: Phaser.GameObjects.GameObject[],
+      _deltaX: number,
+      deltaY: number,
+    ) => {
+      if (deltaY === 0) return;
+
+      const change = deltaY < 0 ? 1.1 : 1 / 1.1;
+
+      this.zoomMultiplier *= change;
+      this.applyCameraZoom();
+    };
+
+    const onPointerDown = () => {
+      if (!first.isDown || !second.isDown) return;
+
+      this.pinching = true;
+      this.touchStartTile = null;
+      previousDistance = fingerDistance();
+    };
+
+    const onPointerMove = () => {
+      if (!first.isDown || !second.isDown) return;
+
+      const distance = fingerDistance();
+
+      if (previousDistance > 0 && distance > 0) {
+        this.zoomMultiplier *= distance / previousDistance;
+        this.applyCameraZoom();
+      }
+
+      previousDistance = distance;
+    }
+
+    const onPointerUp = () => {
+      this.touchStartTile = null;
+      previousDistance = 0;
+
+      // A pinch ends only after both finger have lifted
+      if (!first.isDown && !second.isDown) {
+        this.pinching = false;
+      }
+    };
+
+    const resetGesture = () => {
+      this.touchStartTile = null;
+      this.pinching = false;
+      previousDistance = 0;
+    };
+
+    resetGesture();
+
+    this.input.on('wheel', onWheel);
+    this.input.on('pointerdown', onPointerDown);
+    this.input.on('pointermove', onPointerMove);
+    this.input.on('pointerup', onPointerUp);
+    this.input.on('pointerupoutside', onPointerUp);
+
+    this.game.events.on(Phaser.Core.Events.BLUR, resetGesture);
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.input.off('wheel', onWheel);
+      this.input.off('pointerdown', onPointerDown);
+      this.input.off('pointermove', onPointerMove);
+      this.input.off('pointerup', onPointerUp);
+      this.input.off('pointerupoutside', onPointerUp);
+
+      this.game.events.off(Phaser.Core.Events.BLUR, resetGesture);
+      resetGesture();
+    });
+  }
+
+  private applyCameraZoom(): void {
+    this.zoomMultiplier = Phaser.Math.Clamp(
+      this.zoomMultiplier,
+      0.6,
+      2.5,
+    );
+
+    this.cameras.main.setZoom(
+      this.baseCameraZoom * this.zoomMultiplier
+    );
+
+    this.cameras.main.centerOn(640, 360);
   }
 
   private createCharacters(): void {
@@ -380,9 +506,39 @@ export class GameScene extends Phaser.Scene {
         });
         
         basePlatform.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-          if (!pointer.leftButtonDown()) return;
-
           this.game.canvas.focus({ preventScroll: true });
+
+          if (pointer.wasTouch) {
+            // Remember where the tap started. Don't move yet.
+            this.touchStartTile = {
+              column: columnIndex,
+              row: rowIndex,
+            };
+
+            return;
+          }
+
+          // Mouse clicks still move immediately.
+          if (pointer.leftButtonDown()) {
+            this.moveToTile(columnIndex, rowIndex);
+          }
+        });
+
+        basePlatform.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+          if (!pointer.wasTouch || pointer.wasCanceled) return;
+          if (this.pinching) return;
+
+          const start = this.touchStartTile;
+          if (!start) return;
+
+          // The finger must lift on the same tile where it started.
+          if (start.column !== columnIndex || start.row !== rowIndex) {
+            return;
+          }
+
+          // Allow a little finger wobble, but reject a drag.
+          if (pointer.getDistance() > 12) return;
+
           this.moveToTile(columnIndex, rowIndex);
         });
       });
@@ -547,6 +703,186 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
+  private hasBox(column: number, row: number): boolean {
+    return this.boxes.some(box => {
+      const occupiesTile =
+        box.currentTile.column === column &&
+        box.currentTile.row    === row;
+
+      const reservesTile =
+        box.reservedTile !== null &&
+        box.reservedTile.column === column &&
+        box.reservedTile.row === row;
+      
+      return occupiesTile || reservesTile;
+    })
+  }
+
+  private createBox(column: number, row: number): void {
+    // -1 for 3rd param means no character is excluded from the occupancy check
+    if (!this.isWalkable(column, row, -1)) return;
+
+    const centre = this.tileCentre(column, row);
+
+    const sprite = this.add.image(centre.x, centre.y, 'box')
+      .setDisplayOrigin(94, 142)
+      .setScale(0.35)
+      .setDepth(this.tileDepth(column, row) + 1)
+      .setInteractive({
+        pixelPerfect: true,
+        alphaTolerance: 1
+      });
+
+    const box: PushBox = {
+      sprite,
+      currentTile: {column, row},
+      reservedTile: null
+    };
+
+    this.boxes.push(box);
+
+    sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.game.canvas.focus({ preventScroll: true});
+
+      if (pointer.wasTouch) {
+        this.touchStartTile = { ...box.currentTile };
+        return;
+      }
+
+      if (pointer.leftButtonDown()) {
+        this.tryPushBox(box);
+      }
+    });
+
+    sprite.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!pointer.wasTouch || pointer.wasCanceled) return;
+      if (this.pinching || pointer.getDistance() > 12) return;
+
+      // const start stores where the touch started
+      const start = this.touchStartTile;
+      if (!start) return;
+
+      // did the touch begin on the same tile as the box you're releasing over???
+      if ( start.column !== box.currentTile.column
+        || start.row    !== box.currentTile.row
+      ) {
+        return;
+      }
+
+      this.tryPushBox(box);
+    })
+  }
+
+  private tryPushBox(box: PushBox): void {
+    if (this.isMoving) return;
+
+    const characterIndex = this.activeIndex;
+    const location = this.characterLocations[characterIndex];
+    const playerTile = location.currentTile;
+    const boxTile = { ...box.currentTile };
+
+    // Direction from the character towards the box
+    const columnChange = boxTile.column - playerTile.column;
+    const rowChange    = boxTile.row - playerTile.row;
+
+    // Must be exactly one neighbouring tile away
+    // Diagonal positions do not count
+    const distance = Math.abs(columnChange) + Math.abs(rowChange);
+
+    if (distance !== 1) return;
+
+    // Continue one more tile in that same direction
+    const destination: TilePosition = {
+      column: boxTile.column + columnChange,
+      row: boxTile.row + rowChange
+    };
+
+    const playerCell = this.getCell(playerTile.column, playerTile.row);
+    const boxCell    = this.getCell(boxTile.column, boxTile.row);
+    const destinationCell = this.getCell(
+      destination.column,
+      destination.row
+    );
+
+    if (!playerCell || !boxCell || !destinationCell) return;
+
+    // The character and box must stand at the same height
+    if (playerCell.height !== boxCell.height) return;
+
+    // Boxes cannot be pushed up steps or off Ledges
+    if (destinationCell.height !== boxCell.height) return;
+
+    if (!this.isWalkable(destination.column, destination.row, characterIndex)) {
+      return;
+    }
+
+    const character = this.characters[characterIndex];
+
+    this.faceNextTile(characterIndex, playerTile, boxTile);
+    character.play(`wak-${this.characterViews[characterIndex]}`, true);
+
+    const playerStart = this.tileCentre(playerTile.column, playerTile.row);
+    const boxStart = this.tileCentre(boxTile.column, boxTile.row);
+    const boxEnd = this.tileCentre(destination.column, destination.row);
+
+    const playerStartDepth = this.tileDepth(playerTile.column, playerTile.row);
+    const boxStartDepth = this.tileDepth(boxTile.column, boxTile.row);
+    const boxEndDepth = this.tileDepth(destination.column, destination.row);
+
+    this.route = [];
+    this.isMoving = true;
+
+    // Reserve where both objects are going
+    location.reservedTile = boxTile;
+    box.reservedTile = destination;
+
+    const progress = { value: 0 };
+
+    this.tweens.add({
+      targets: progress,
+      value: 1,
+      duration: 300,
+      ease: 'Linear',
+
+      onUpdate: () => {
+        const t = progress.value;
+
+        // The character walks into the box's old position
+        character.setPosition(
+          Phaser.Math.Linear(playerStart.x, boxStart.x, t),
+          Phaser.Math.Linear(playerStart.y, boxStart.y, t)
+        );
+
+        character.setDepth(
+          Phaser.Math.Linear(playerStartDepth, boxStartDepth, t) + 1
+        );
+
+        // The box slides into the next tile
+        box.sprite.setPosition(
+          Phaser.Math.Linear(boxStart.x, boxEnd.x, t),
+          Phaser.Math.Linear(boxStart.y, boxEnd.y, t)
+        );
+
+        box.sprite.setDepth(
+          Phaser.Math.Linear(boxStartDepth, boxEndDepth, t) + 1
+        );
+      },
+
+      onComplete: () => {
+        box.currentTile = destination;
+        box.reservedTile = null;
+
+        location.currentTile = boxTile;
+        location.reservedTile = null;
+
+        // Preserve portal behaviour if the character enters a portal tile
+        if (!this.tryTeleport(characterIndex)) {
+          this.stopCharacterMovement(characterIndex);
+        }
+      }
+    })
+  }
+
   /* PLATFORM NAVIGATION - [END] */
 
   /* MOVE CHARACTER ALONG A PATH - [START] */
@@ -670,6 +1006,7 @@ export class GameScene extends Phaser.Scene {
     
     if (!this.getCell(column, row)) return false;
     if (this.hasObstacle(column, row)) return false;
+    if (this.hasBox(column, row)) return false;
 
     // Ground exist, no obstacle -> check whether character can occupy it
     return !this.hasOtherCharacter(column, row, movingCharacterIndex);
