@@ -1,0 +1,111 @@
+name: Build and deploy Koinonia
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koinonia-home-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the project
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check TypeScript and build
+        run: npm run build
+
+      - name: Package the build
+        run: |
+          tar -czf "$RUNNER_TEMP/koinonia.tar.gz" -C dist .
+
+      - name: Check Tailscale credentials
+        shell: bash
+        env:
+          TS_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_CLIENT_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          missing=0
+
+          if [[ -z "$TS_CLIENT_ID" ]]; then
+            echo "::error::TS_OAUTH_CLIENT_ID is unavailable to this job."
+            missing=1
+          fi
+
+          if [[ -z "$TS_CLIENT_SECRET" ]]; then
+            echo "::error::TS_OAUTH_SECRET is unavailable to this job."
+            missing=1
+          fi
+
+          exit "$missing"
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-runner
+          ping: debian.tailebbe00.ts.net
+
+      - name: Upload and activate the release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          tailscale ssh \
+            koinonia-deploy@debian.tailebbe00.ts.net \
+            /usr/local/bin/deploy-koinonia "$release" \
+            < "$RUNNER_TEMP/koinonia.tar.gz"
+
+      - name: Verify the public deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          url="https://koinonia.harshnaidu.me.uk/version.txt"
+          url="${url}?run=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          for attempt in 1 2 3 4 5; do
+            if deployed_commit=$(curl \
+              --fail \
+              --silent \
+              --show-error \
+              --connect-timeout 10 \
+              --max-time 30 \
+              "$url"); then
+
+              if [[ "$deployed_commit" == "$GITHUB_SHA" ]]; then
+                echo "Public deployment verified."
+                exit 0
+              fi
+            fi
+
+            sleep 5
+          done
+
+          echo "The public URL did not return the expected commit." >&2
+          exit 1
