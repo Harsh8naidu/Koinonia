@@ -41,6 +41,7 @@ export class GameScene extends Phaser.Scene {
   private teleportTiles: TilePosition[] = [];
   private baseCameraZoom = 1;
   private zoomMultiplier = 1;
+  private cameraFocus = {x: 640, y: 360};
 
   private pinching = false;
   private touchStartTile: TilePosition | null = null;
@@ -208,6 +209,15 @@ export class GameScene extends Phaser.Scene {
 
     let previousDistance = 0;
 
+    let previousMiddle = { x: 0, y: 0};
+
+    const fingerMiddle = () => {
+      return {
+        x: (first.x + second.x) / 2,
+        y: (first.y + second.y) / 2
+      };
+    };
+
     const fingerDistance = () => {
       return Phaser.Math.Distance.Between(
         first.x,
@@ -236,20 +246,42 @@ export class GameScene extends Phaser.Scene {
 
       this.pinching = true;
       this.touchStartTile = null;
+
       previousDistance = fingerDistance();
+      previousMiddle = fingerMiddle();
     };
 
     const onPointerMove = () => {
-      if (!first.isDown || !second.isDown) return;
+      if (!this.pinching || !first.isDown || !second.isDown) return;
 
+      const camera = this.cameras.main;
+      const middle = fingerMiddle();
       const distance = fingerDistance();
+
+      // Remeber the world position underneath the previous finger midpoint
+      const worldPoint = {
+        x: this.cameraFocus.x
+          + (previousMiddle.x - camera.width / 2) / camera.zoom,
+
+        y: this.cameraFocus.y
+          + (previousMiddle.y - camera.height / 2) / camera.zoom
+      };
 
       if (previousDistance > 0 && distance > 0) {
         this.zoomMultiplier *= distance / previousDistance;
-        this.applyCameraZoom();
       }
 
+      this.applyCameraZoom();
+
+      // Move the camera so that world position follows the fingers
+      this.cameraFocus.x =
+        worldPoint.x - (middle.x - camera.width / 2) / camera.zoom;
+
+      this.cameraFocus.y =
+        worldPoint.y - (middle.y - camera.height / 2) / camera.zoom;
+
       previousDistance = distance;
+      previousMiddle = middle;
     }
 
     const onPointerUp = () => {
@@ -275,6 +307,7 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointermove', onPointerMove);
     this.input.on('pointerup', onPointerUp);
     this.input.on('pointerupoutside', onPointerUp);
+    this.scale.on(Phaser.Scale.Events.RESIZE, resetGesture);
 
     this.game.events.on(Phaser.Core.Events.BLUR, resetGesture);
 
@@ -284,6 +317,7 @@ export class GameScene extends Phaser.Scene {
       this.input.off('pointermove', onPointerMove);
       this.input.off('pointerup', onPointerUp);
       this.input.off('pointerupoutside', onPointerUp);
+      this.input.off(Phaser.Scale.Events.RESIZE, resetGesture);
 
       this.game.events.off(Phaser.Core.Events.BLUR, resetGesture);
       resetGesture();
@@ -301,7 +335,7 @@ export class GameScene extends Phaser.Scene {
       this.baseCameraZoom * this.zoomMultiplier
     );
 
-    this.cameras.main.centerOn(640, 360);
+    this.cameras.main.centerOn(this.cameraFocus.x, this.cameraFocus.y);
   }
 
   private createCharacters(): void {
