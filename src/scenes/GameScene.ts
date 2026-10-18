@@ -167,11 +167,11 @@ export class GameScene extends Phaser.Scene {
     // Listen on the focusable canvas only: other page elements keep their keys.
     const canvas = this.game.canvas;
     canvas.tabIndex = 0;
-    canvas.setAttribute(
-      'aria-label',
-      'Koinonia. Click a title to move. Q switches teammates. ' +
-      '1 and 2 select a teammate.',
-    );
+    // canvas.setAttribute(
+    //   'aria-label',
+    //   'Koinonia. Click a title to move. Q switches teammates. ' +
+    //   '1 and 2 select a teammate.',
+    // );
 
     const focus = () => {
       canvas.focus({ preventScroll: true });
@@ -251,7 +251,18 @@ export class GameScene extends Phaser.Scene {
       previousMiddle = fingerMiddle();
     };
 
-    const onPointerMove = () => {
+    const onPointerMove = (pointer: Phaser.Input.Pointer) => {
+      if (!pointer.wasTouch && pointer.middleButtonDown()) {
+        const camera = this.cameras.main;
+
+        this.cameraFocus.x -= (pointer.x - pointer.prevPosition.x) / camera.zoom;
+
+        this.cameraFocus.y -= (pointer.y - pointer.prevPosition.y) / camera.zoom;
+
+        camera.centerOn(this.cameraFocus.x, this.cameraFocus.y);
+        return;
+      }
+
       if (!this.pinching || !first.isDown || !second.isDown) return;
 
       const camera = this.cameras.main;
@@ -279,6 +290,8 @@ export class GameScene extends Phaser.Scene {
 
       this.cameraFocus.y =
         worldPoint.y - (middle.y - camera.height / 2) / camera.zoom;
+
+      camera.centerOn(this.cameraFocus.x, this.cameraFocus.y);
 
       previousDistance = distance;
       previousMiddle = middle;
