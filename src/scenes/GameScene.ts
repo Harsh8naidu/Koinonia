@@ -21,6 +21,12 @@ type PushBox = {
   reservedTile: TilePosition | null;
 }
 
+type LevelSwitch = {
+  sprite: Phaser.GameObjects.Sprite;
+  tile: TilePosition;
+  activated: boolean;  
+}
+
 type Cell = {
   height: number; // Height of gameplay blocks
   walkable: boolean; // Used for both taller surfaces as well as obstacles
@@ -46,6 +52,8 @@ export class GameScene extends Phaser.Scene {
   private pinching = false;
   private touchStartTile: TilePosition | null = null;
 
+  private switches: LevelSwitch[] = [];
+
   private readonly groundMap = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -70,9 +78,10 @@ export class GameScene extends Phaser.Scene {
   // Art Assets
   preload(): void {
     this.load.image('platform-tile', '/assets/art/platform/isometric_0014.png');
-    this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0053.png');
+    this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0058.png');
     this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG');
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
+    this.load.image('switch', '/assets/art/navigation/switchGreen.png');
 
     this.load.spritesheet('teleport', 
       'assets/art/navigation/teleport_512.png',
@@ -99,6 +108,13 @@ export class GameScene extends Phaser.Scene {
         frameHeight: 90,
       }
     )
+
+    for (let frame = 1; frame <= 4; frame++) {
+      this.load.image(
+        `switch-red-${frame}`,
+        `/assets/art/navigation/switchRed_0${frame}.png`
+      );
+    }
   }
 
   create(): void {
@@ -152,6 +168,10 @@ export class GameScene extends Phaser.Scene {
     this.createTeleport(8, 6);
     this.createTeleport(4, 2);
 
+    this.switches = [];
+    this.createSwitchAnimation();
+    this.createSwitch(5, 8);    
+
     // Create and Animate Characters    
     this.createCharacterAnimations();
     this.createCharacters(); // Create Characters
@@ -160,7 +180,7 @@ export class GameScene extends Phaser.Scene {
     this.input.setTopOnly(true);
 
     this.boxes = [];
-    this.createBox(7, 2);
+    this.createBox(8, 3);
 
     this.uiElements(); // In Game UI
     
@@ -635,6 +655,11 @@ export class GameScene extends Phaser.Scene {
 
     // An isolated two-block platform with no step beside it.
     this.cells[6][8] = { height: 2, walkable: true };
+    this.cells[5][8] = { height: 2, walkable: true };
+    this.cells[4][8] = { height: 2, walkable: true };
+    this.cells[3][8] = { height: 2, walkable: true };
+    this.cells[2][8] = { height: 2, walkable: true };
+    this.cells[3][9] = { height: 2, walkable: true };
   }
 
   private getCell(column: number, row: number): Cell | null {
@@ -778,7 +803,7 @@ export class GameScene extends Phaser.Scene {
       .setInteractive({
         pixelPerfect: true,
         alphaTolerance: 1
-      });
+    });
 
     const box: PushBox = {
       sprite,
@@ -930,6 +955,99 @@ export class GameScene extends Phaser.Scene {
     })
   }
 
+  private createSwitchAnimation(): void {
+    if (this.anims.exists('switch-red-glow')) return;
+
+    this.anims.create({
+      key: 'switch-red-glow',
+      frames: [
+        { key: 'switch-red-1' },
+        { key: 'switch-red-2' },
+        { key: 'switch-red-3' },
+        { key: 'switch-red-4' }
+      ],
+      frameRate: 5, // increase to get faster animation
+      repeat: -1, // loop
+    })
+  }
+
+  private createSwitch(column: number, row: number): void {
+    const cell = this.getCell(column, row);
+    if (!cell || !cell.walkable) return;
+
+    const centre = this.tileCentre(column, row);
+
+    const sprite = this.add.sprite(centre.x, centre.y, 'switch-red-1')
+      .setOrigin(0.5, 0.83)
+      .setScale(0.25, 0.20)
+      .setDepth(this.tileDepth(column, row) + 1)
+      .setInteractive({
+        pixelPerfect: true,
+        alphaTolerance: 1
+      })
+      .play('switch-red-glow');
+
+    const levelSwitch: LevelSwitch = {
+      sprite,
+      tile: { column, row },
+      activated: false      
+    };
+
+    this.switches.push(levelSwitch);
+
+    sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.game.canvas.focus({ preventScroll: true });
+
+      if (pointer.wasTouch) {
+        this.touchStartTile = { column, row };
+        return;
+      }
+
+      if (pointer.leftButtonDown()) {
+        this.tryPressSwitch(levelSwitch);
+      }
+    });
+
+    sprite.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!pointer.wasTouch || pointer.wasCanceled) return;
+      if (this.pinching || pointer.getDistance() > 12) return;
+
+      const start = this.touchStartTile;
+      if (!start || start.column !== column || start.row !== row) return;
+
+      this.tryPressSwitch(levelSwitch);
+    });
+  }
+
+  private tryPressSwitch(levelSwitch: LevelSwitch): void {
+    if (this.isMoving || levelSwitch.activated) return;
+
+    const playerTile = this.characterLocations[this.activeIndex].currentTile;
+
+    const switchTile = levelSwitch.tile;
+
+    const distance =
+      Math.abs(playerTile.column - switchTile.column) +
+      Math.abs(playerTile.row - switchTile.row);
+
+    // The character must be directly beside the switch, not diagonal
+    if (distance !== 1) return;
+
+    const playerCell = this.getCell(playerTile.column, playerTile.row);
+    const switchCell = this.getCell(switchTile.column, switchTile.row);
+
+    if (!playerCell || !switchCell) return;
+
+    // Prevent presssing a switch from a different floor height
+    if (playerCell.height !== switchCell.height) return;
+
+    levelSwitch.activated = true;
+    levelSwitch.sprite.stop();
+    levelSwitch.sprite.setTexture('switch-red-1');
+
+    // TODO: show the green switch and trigger the level action
+  }
+
   /* PLATFORM NAVIGATION - [END] */
 
   /* MOVE CHARACTER ALONG A PATH - [START] */
@@ -1054,6 +1172,12 @@ export class GameScene extends Phaser.Scene {
     if (!this.getCell(column, row)) return false;
     if (this.hasObstacle(column, row)) return false;
     if (this.hasBox(column, row)) return false;
+    if (this.switches.some(levelSwitch =>
+      levelSwitch.tile.column === column &&
+      levelSwitch.tile.row === row
+    )) {
+      return false;
+    }
 
     // Ground exist, no obstacle -> check whether character can occupy it
     return !this.hasOtherCharacter(column, row, movingCharacterIndex);
