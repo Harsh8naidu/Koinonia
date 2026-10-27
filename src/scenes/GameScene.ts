@@ -34,9 +34,8 @@ type Cell = {
 
 export class GameScene extends Phaser.Scene {
   private characters: Phaser.GameObjects.Sprite[] = [];
-  private labels: Phaser.GameObjects.Text[] = [];
   private activeIndex = 0;
-  private indicator!: Phaser.GameObjects.Text;
+  private indicator!: Phaser.GameObjects.Image;
   private status!: Phaser.GameObjects.Text;
   private route: TilePosition[] = [];
   private characterLocations: CharacterLocation[] = [];
@@ -82,6 +81,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG');
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
     this.load.image('switch', '/assets/art/navigation/switchGreen.png');
+    this.load.image('characterIndicator', 'assets/art/hooded/characterIndicator.png');
 
     this.load.spritesheet('teleport', 
       'assets/art/navigation/teleport_512.png',
@@ -408,17 +408,11 @@ export class GameScene extends Phaser.Scene {
       character.setOrigin(0.5, 0.9);
       character.play('idle-front-right')
 
-    const tile = this.characterLocations[index].currentTile;
+      const tile = this.characterLocations[index].currentTile;
 
-    character.setDepth(
-      this.tileDepth(tile.column, tile.row) + 1
-    );
-      
-    this.labels.push(this.add.text(character.x, character.y, index === 0 ? 'A' : 'B', {
-        fontFamily: 'monospace', 
-        fontSize: '22px', 
-        color: '#10232c',
-      }).setOrigin(0.5));
+      character.setDepth(
+        this.tileDepth(tile.column, tile.row) + 1
+      );
     });
   }
 
@@ -1325,9 +1319,10 @@ export class GameScene extends Phaser.Scene {
     this.add.text(-80, 35, 'Move, jump, and switch between your two teammates.', {
       fontSize: '18px', color: '#9aafb9',
     });
-    this.indicator = this.add.text(0, 0, '▼ ACTIVE', {
-      fontFamily: 'monospace', fontSize: '16px', color: '#ffffff',
-    }).setOrigin(0.5, 1);
+    this.indicator = this.add.image(0, 0, 'characterIndicator')
+      .setOrigin(0.5, -0.8)
+      .setScale(0.2)
+      .setDepth(10000);
   }
 
   private select(index: number): void {
@@ -1346,15 +1341,6 @@ export class GameScene extends Phaser.Scene {
   update(): void {
     const active = this.characters[this.activeIndex];
     if (!active) return;
-
-    this.characters.forEach((character, index) => {
-      this.labels[index].setPosition(
-        character.x, 
-        character.y - 40,
-      )
-      .setDepth(character.depth + 1)
-      .setAlpha(character.alpha);
-    });
 
     this.indicator.setAlpha(active.alpha);
 
