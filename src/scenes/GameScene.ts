@@ -180,7 +180,7 @@ export class GameScene extends Phaser.Scene {
     this.input.setTopOnly(true);
 
     this.boxes = [];
-    this.createBox(8, 3);
+    this.createBox(8, 5);
 
     this.uiElements(); // In Game UI
     
@@ -930,11 +930,17 @@ export class GameScene extends Phaser.Scene {
         );
 
         box.sprite.setDepth(
-          Phaser.Math.Linear(boxStartDepth, boxEndDepth, t) + 1
+          // Math.max chooses the max depth of the box and then we add +1 to place the box above any tile below it
+          Math.max(boxStartDepth, boxEndDepth) + 1
         );
       },
 
       onComplete: () => {
+        // Both player and box have arrived at the destination
+        // Restore their normal drawing order (i.e depth)
+        box.sprite.setDepth(boxEndDepth + 1);
+        character.setDepth(boxStartDepth + 1);
+
         box.currentTile = destination;
         box.reservedTile = null;
 
