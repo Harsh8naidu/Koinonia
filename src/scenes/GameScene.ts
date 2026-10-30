@@ -80,7 +80,6 @@ export class GameScene extends Phaser.Scene {
     this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0058.png');
     this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG');
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
-    this.load.image('switch', '/assets/art/navigation/switchGreen.png');
     this.load.image('characterIndicator', 'assets/art/hooded/characterIndicator.png');
 
     this.load.spritesheet('teleport', 
@@ -113,6 +112,13 @@ export class GameScene extends Phaser.Scene {
       this.load.image(
         `switch-red-${frame}`,
         `/assets/art/navigation/switchRed_0${frame}.png`
+      );
+    }
+
+    for (let frame = 1; frame <= 4; frame++) {
+      this.load.image(
+        `switch-green-${frame}`,
+        `/assets/art/navigation/switchGreen_0${frame}.png`
       );
     }
   }
@@ -647,6 +653,9 @@ export class GameScene extends Phaser.Scene {
     // An obstacle: its top cannot be used.
     this.cells[3][2] = { height: 1, walkable: false };
 
+    this.cells[8][5] = { height: 1, walkable: true };
+    this.cells[7][5] = { height: 1, walkable: true };
+
     // An isolated two-block platform with no step beside it.
     this.cells[6][8] = { height: 2, walkable: true };
     this.cells[5][8] = { height: 2, walkable: true };
@@ -956,19 +965,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createSwitchAnimation(): void {
-    if (this.anims.exists('switch-red-glow')) return;
+    for (const colour of ['red', 'green']) {
+      const animationKey = `switch-${colour}-glow`;
 
-    this.anims.create({
-      key: 'switch-red-glow',
-      frames: [
-        { key: 'switch-red-1' },
-        { key: 'switch-red-2' },
-        { key: 'switch-red-3' },
-        { key: 'switch-red-4' }
-      ],
-      frameRate: 5, // increase to get faster animation
-      repeat: -1, // loop
-    })
+      if (this.anims.exists(animationKey)) continue;
+
+      this.anims.create({
+        key: animationKey,
+        frames: [
+          { key: `switch-${colour}-1` },
+          { key: `switch-${colour}-2` },
+          { key: `switch-${colour}-3` },
+          { key: `switch-${colour}-4` },
+        ],
+        frameRate: 5, // increase to get faster animation
+        repeat: -1, // loop
+      });
+    }
   }
 
   private createSwitch(column: number, row: number): void {
@@ -995,10 +1008,17 @@ export class GameScene extends Phaser.Scene {
 
     this.switches.push(levelSwitch);
 
+    let touchStartedOnSwitch = false;
+
+    sprite.on('pointerout', () => {
+      touchStartedOnSwitch = false;
+    });
+
     sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.game.canvas.focus({ preventScroll: true });
 
       if (pointer.wasTouch) {
+        touchStartedOnSwitch = true;
         this.touchStartTile = { column, row };
         return;
       }
@@ -1009,7 +1029,12 @@ export class GameScene extends Phaser.Scene {
     });
 
     sprite.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-      if (!pointer.wasTouch || pointer.wasCanceled) return;
+      if (!pointer.wasTouch) return;
+
+      const startedHere = touchStartedOnSwitch;
+      touchStartedOnSwitch = false;
+
+      if (!startedHere || pointer.wasCanceled) return;
       if (this.pinching || pointer.getDistance() > 12) return;
 
       const start = this.touchStartTile;
@@ -1020,7 +1045,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryPressSwitch(levelSwitch: LevelSwitch): void {
-    if (this.isMoving || levelSwitch.activated) return;
+    if (this.isMoving) return;
 
     const playerTile = this.characterLocations[this.activeIndex].currentTile;
 
@@ -1041,11 +1066,8 @@ export class GameScene extends Phaser.Scene {
     // Prevent presssing a switch from a different floor height
     if (playerCell.height !== switchCell.height) return;
 
-    levelSwitch.activated = true;
-    levelSwitch.sprite.stop();
-    levelSwitch.sprite.setTexture('switch-red-1');
-
-    // TODO: show the green switch and trigger the level action
+    levelSwitch.activated = !levelSwitch.activated;
+    levelSwitch.sprite.play(levelSwitch.activated ? 'switch-green-glow' : 'switch-red-glow');
   }
 
   /* PLATFORM NAVIGATION - [END] */
@@ -1344,12 +1366,11 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  update(): void {
+  update(time: number): void {
     const active = this.characters[this.activeIndex];
     if (!active) return;
 
     this.indicator.setAlpha(active.alpha);
-
     this.indicator.setPosition(
       active.x, 
       active.y - 100
