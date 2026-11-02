@@ -81,6 +81,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG');
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
     this.load.image('characterIndicator', 'assets/art/hooded/characterIndicator.png');
+    this.load.image('liftPlatform', 'assets/art/navigation/liftPlatform_03.png')
 
     this.load.spritesheet('teleport', 
       'assets/art/navigation/teleport_512.png',
@@ -188,7 +189,7 @@ export class GameScene extends Phaser.Scene {
     this.boxes = [];
     this.createBox(8, 5);
 
-    this.uiElements(); // In Game UI
+    this.createLift(6, 6);
     
     // Listen on the focusable canvas only: other page elements keep their keys.
     const canvas = this.game.canvas;
@@ -1068,6 +1069,22 @@ export class GameScene extends Phaser.Scene {
 
     levelSwitch.activated = !levelSwitch.activated;
     levelSwitch.sprite.play(levelSwitch.activated ? 'switch-green-glow' : 'switch-red-glow');
+  }
+
+  private createLift(column: number, row: number): void {
+    if (!this.getCell(column, row)) return;
+
+    const centre = this.tileCentre(column, row);
+
+    const borderOverlap = -5;
+
+    this.add.image(centre.x, centre.y, 'liftPlatform')
+      .setDisplayOrigin(128, 84)
+      .setScale(
+        (this.tileWidth + borderOverlap) / 256,
+        (this.tileHeight + borderOverlap) / 128
+      )
+      .setDepth(this.tileDepth(column, row) + 0.5);
   }
 
   /* PLATFORM NAVIGATION - [END] */
