@@ -1,6 +1,6 @@
 # Koinonia
 
-Single-player, multi-character browser puzzle platformer. This build implements **Milestone 0 only**: a movement sandbox, with no puzzle or exit yet.
+Single-player, multi-character browser puzzle platformer. This game was inspired by TeamUp Girls Inc that I used to play as a child. I will update the Readme, when the all the core mechanics of the game are developed.
 
 ## Run
 
