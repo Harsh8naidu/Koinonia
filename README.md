@@ -26,9 +26,7 @@ Production output is in `dist/`. No server or account is needed by the game.
 - A/D or Left/Right: move the selected character.
 - Space, W, or Up: jump when grounded. Holding jump does not auto-repeat.
 - Q: switch between teammates. 1/2: select A/B directly.
-- Click the canvas to focus; Tab remains available for browser focus navigation.
-
-Two labeled, differently colored placeholder characters have independent Arcade Physics bodies. Both collide with the floor and world bounds; they can pass through each other. Switching stops the old character's horizontal velocity and preserves vertical motion. The HUD and overhead marker identify the active character. Losing focus clears input. Refresh the page to reset this sandbox.
+- Yet to be implemented
 
 ## Structure
 
@@ -45,9 +43,3 @@ Dependencies are pinned with a lockfile: Phaser 4.2.1, TypeScript 7.0.2, Vite 8.
 - In-app Chromium browser smoke check: scene renders, both characters land on the floor, B jumps and moves horizontally, Q selects B, and 1 selects A; active marker updates.
 - No browser console errors or warnings during that smoke check.
 - Vite warns that the full Phaser bundle exceeds 500 kB (approximately 359 kB gzip). Optimization is deferred.
-
-Not yet verified: Firefox, prolonged held-key input, focus loss/regain regression, switching during a jump, or browser zoom. Moving platforms are not implemented or tested. No automated gameplay tests were added for this small prototype.
-
-## Next milestone
-
-Milestone 1: finish team-control validation, add camera follow and eased transitions in a wider test room, and test switching midair and near viewport edges. Then prototype the pulley/lift interaction before building the first puzzle. Coyote time, jump buffering, checkpoint reset, jetpack, collectibles, audio and polished art remain future work.
