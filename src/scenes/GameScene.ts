@@ -189,7 +189,7 @@ export class GameScene extends Phaser.Scene {
     this.boxes = [];
     this.createBox(8, 5);
 
-    this.createLift(6, 6);
+    this.createLift(0, 7);
     
     // Listen on the focusable canvas only: other page elements keep their keys.
     const canvas = this.game.canvas;
@@ -1356,20 +1356,6 @@ export class GameScene extends Phaser.Scene {
     return -10000 + (column + row) * 100;
   }
 
-  private uiElements(): void {
-    this.add.text(-80, -30, 'FOUNDATION / 01', {
-      fontFamily: 'monospace', fontSize: '16px', color: '#9aafb9',
-    });
-    this.status = this.add.text(-80, 0, '', { fontSize: '24px', color: '#ead19b' });
-    this.add.text(-80, 35, 'Move, jump, and switch between your two teammates.', {
-      fontSize: '18px', color: '#9aafb9',
-    });
-    this.indicator = this.add.image(0, 0, 'characterIndicator')
-      .setOrigin(0.5, -0.8)
-      .setScale(0.2)
-      .setDepth(10000);
-  }
-
   private select(index: number): void {
     if(index !== this.activeIndex) {
       // Finish the current step, but cancel the remaining route
@@ -1383,7 +1369,7 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  update(time: number): void {
+  update(): void {
     const active = this.characters[this.activeIndex];
     if (!active) return;
 
