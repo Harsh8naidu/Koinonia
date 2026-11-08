@@ -600,9 +600,8 @@ export class GameScene extends Phaser.Scene {
             return;
           }
 
-          // Mouse clicks still move immediately.
           if (pointer.leftButtonDown()) {
-            this.moveToTile(columnIndex, rowIndex);
+            this.handleTileClick(columnIndex, rowIndex);
           }
         });
 
@@ -622,10 +621,23 @@ export class GameScene extends Phaser.Scene {
           // Allow a little finger wobble, but reject a drag.
           if (pointer.getDistance() > 12) return;
 
-          this.moveToTile(columnIndex, rowIndex);
+          this.handleTileClick(columnIndex, rowIndex);
         });
       });
     });
+  }
+
+  private handleTileClick(column: number, row: number): void {
+    const levelSwitch = this.switches.find(({ tile }) =>
+      tile.column === column && tile.row === row
+    );
+
+    if (levelSwitch) {
+      this.tryPressSwitch(levelSwitch);
+      return;
+    }
+
+    this.moveToTile(column, row);
   }
 
   private textureForLevel(level: number, stackHeight: number): string {
