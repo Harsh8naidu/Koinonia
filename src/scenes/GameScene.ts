@@ -21,10 +21,18 @@ type PushBox = {
   reservedTile: TilePosition | null;
 }
 
+type LiftPlatform = {
+  sprite: Phaser.GameObjects.Image;
+  tile: TilePosition;
+  baseHeight: number;
+}
+
 type LevelSwitch = {
   sprite: Phaser.GameObjects.Sprite;
   tile: TilePosition;
-  activated: boolean;  
+  activated: boolean; 
+  lift: LiftPlatform;
+  raisedHeight: number;
 }
 
 type Cell = {
@@ -52,6 +60,7 @@ export class GameScene extends Phaser.Scene {
   private touchStartTile: TilePosition | null = null;
 
   private switches: LevelSwitch[] = [];
+  private lifts: LiftPlatform[] = [];
 
   private readonly groundMap = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -177,7 +186,12 @@ export class GameScene extends Phaser.Scene {
 
     this.switches = [];
     this.createSwitchAnimation();
-    this.createSwitch(5, 8);    
+
+    const lift = this.createLift(0, 7);
+
+    if (lift) {
+      this.createSwitch(5, 8, lift, 2);
+    }    
 
     // Create and Animate Characters    
     this.createCharacterAnimations();
@@ -188,8 +202,6 @@ export class GameScene extends Phaser.Scene {
 
     this.boxes = [];
     this.createBox(8, 5);
-
-    this.createLift(0, 7);
     
     // Listen on the focusable canvas only: other page elements keep their keys.
     const canvas = this.game.canvas;
@@ -574,6 +586,8 @@ export class GameScene extends Phaser.Scene {
         });
         
         basePlatform.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+          if (this.hasLift(columnIndex, rowIndex)) return;
+
           this.game.canvas.focus({ preventScroll: true });
 
           if (pointer.wasTouch) {
@@ -593,6 +607,7 @@ export class GameScene extends Phaser.Scene {
         });
 
         basePlatform.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+          if (this.hasLift(columnIndex, rowIndex)) return;
           if (!pointer.wasTouch || pointer.wasCanceled) return;
           if (this.pinching) return;
 
@@ -985,7 +1000,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createSwitch(column: number, row: number): void {
+  private createSwitch(column: number, row: number, lift: LiftPlatform, raisedHeight: number): void {
     const cell = this.getCell(column, row);
     if (!cell || !cell.walkable) return;
 
@@ -1004,7 +1019,9 @@ export class GameScene extends Phaser.Scene {
     const levelSwitch: LevelSwitch = {
       sprite,
       tile: { column, row },
-      activated: false      
+      activated: false,
+      lift,
+      raisedHeight    
     };
 
     this.switches.push(levelSwitch);
@@ -1069,22 +1086,161 @@ export class GameScene extends Phaser.Scene {
 
     levelSwitch.activated = !levelSwitch.activated;
     levelSwitch.sprite.play(levelSwitch.activated ? 'switch-green-glow' : 'switch-red-glow');
+
+    const targetHeight = levelSwitch.activated ? levelSwitch.raisedHeight : levelSwitch.lift.baseHeight;
+
+    this.moveLift(levelSwitch.lift, targetHeight);
   }
 
-  private createLift(column: number, row: number): void {
-    if (!this.getCell(column, row)) return;
+  private moveLift(lift: LiftPlatform, targetHeight: number): void {
+    const cell = this.getCell(lift.tile.column, lift.tile.row);
+
+    if (!cell || this.isMoving || cell.height === targetHeight) return;
+
+    const heightChange = targetHeight - cell.height;
+
+    // Screen Y gets smaller when something moves around
+    const verticalChange =  -heightChange * this.blockPixelHeight;
+
+    // Remember every character currently standing on this lift
+    const passengers = this.characters.filter((_, index) => {
+      const tile = this.characterLocations[index].currentTile;
+
+      return tile.column === lift.tile.column &&
+        tile.row === lift.tile.row;
+    })
+    .map(sprite => ({
+      sprite,
+      startY: sprite.y
+    }));
+
+    // Carry a box too, if one has been pushed onto the lift
+    const carriedBoxes = this.boxes
+      .filter(box => 
+        box.currentTile.column === lift.tile.column &&
+        box.currentTile.row === lift.tile.row
+      )
+      .map(box => ({
+        sprite: box.sprite,
+        startY: box.sprite.y
+      }));
+
+      const startY = lift.sprite.y;
+      const progress = { value: 0 };
+
+      this.route = [];
+      this.isMoving = true;
+      lift.sprite.clearTint();
+
+      this.tweens.add({
+        targets: progress,
+        value: 1,
+        duration: Math.abs(heightChange) * 600,
+        ease: 'Sine.InOut',
+
+        onUpdate: () => {
+          const offset = verticalChange * progress.value;
+
+          lift.sprite.y = startY + offset;
+
+          for (const passenger of passengers) {
+            passenger.sprite.y = passenger.startY + offset;
+          }
+
+          for (const box of carriedBoxes) {
+            box.sprite.y = box.startY + offset;
+          }
+        },
+
+        onComplete: () => {
+          lift.sprite.y = startY + verticalChange;
+
+          for (const passenger of passengers) {
+            passenger.sprite.y = passenger.startY + verticalChange;
+          }
+
+          for (const box of carriedBoxes) {
+            box.sprite.y = box.startY + verticalChange;
+          }
+
+          // Pathfinding now treats this cell as the new floor level
+          cell.height = targetHeight;
+
+          this.isMoving = false;
+        }
+      });
+  }
+
+  private hasLift(column: number, row: number): boolean {
+    return this.lifts.some(lift => 
+      lift.tile.column === column &&
+      lift.tile.row === row
+    );
+  }
+
+  private createLift(column: number, row: number): LiftPlatform | null {
+    const cell = this.getCell(column, row);
+    if (!cell || !cell.walkable) return null;
 
     const centre = this.tileCentre(column, row);
 
     const borderOverlap = -5;
 
-    this.add.image(centre.x, centre.y, 'liftPlatform')
+    const sprite = this.add.image(centre.x, centre.y, 'liftPlatform')
       .setDisplayOrigin(128, 84)
       .setScale(
         (this.tileWidth + borderOverlap) / 256,
         (this.tileHeight + borderOverlap) / 128
       )
       .setDepth(this.tileDepth(column, row) + 0.5);
+
+    const lift: LiftPlatform = {
+      sprite,
+      tile: {column, row},
+      baseHeight: cell.height
+    };
+
+    this.lifts.push(lift);
+
+    // Only the lift's top surface is clickable
+    const diamond = new Phaser.Geom.Polygon([
+      128, 0,
+      256, 64,
+      128, 128,
+      0, 64
+    ]);
+
+    sprite.setInteractive(diamond, Phaser.Geom.Polygon.Contains);
+
+    sprite.on('pointerover', () => {
+      const reachable = this.canReachTile(column, row);
+      sprite.setTint(reachable ? 0x88ff88 : 0xff6666);
+    });
+
+    sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.game.canvas.focus({ preventScroll: true });
+
+      if (pointer.wasTouch) {
+        this.touchStartTile = { column, row };
+        return;
+      }
+
+      if (pointer.leftButtonDown()) {
+        this.moveToTile(column, row);
+      }
+    });
+
+    sprite.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (!pointer.wasTouch || pointer.wasCanceled) return;
+      if (this.pinching || pointer.getDistance() > 12) return;
+
+      const start = this.touchStartTile;
+      if (!start || start.column !== column || start.row !== row) return;
+
+      this.moveToTile(column, row);
+    });
+
+    return lift;
   }
 
   /* PLATFORM NAVIGATION - [END] */
