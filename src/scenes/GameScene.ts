@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { blockPixelHeight, drawPlatformTile, preloadPlatformTextures, tileHeight, tileWidth, type Cell } from './PlatformRenderer';
 import { CameraControls } from './CameraControls';
 
 const SPEED = 260;
@@ -36,11 +37,6 @@ type LevelSwitch = {
   raisedHeight: number;
 }
 
-type Cell = {
-  height: number; // Height of gameplay blocks
-  walkable: boolean; // Used for both taller surfaces as well as obstacles
-}
-
 export class GameScene extends Phaser.Scene {
   private characters: Phaser.GameObjects.Sprite[] = [];
   private activeIndex = 0;
@@ -71,10 +67,6 @@ export class GameScene extends Phaser.Scene {
     [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
   ];
 
-  private readonly tileScale = 0.5;
-  private readonly blockPixelHeight = 93 * this.tileScale;
-  private readonly tileWidth = 160 * this.tileScale;
-  private readonly tileHeight = 92 * this.tileScale;
   private readonly platformX = 600;
   private readonly platformY = 140;
 
@@ -82,9 +74,7 @@ export class GameScene extends Phaser.Scene {
 
   // Art Assets
   preload(): void {
-    this.load.image('platform-tile', '/assets/art/platform/isometric_0014.png');
-    this.load.image('rock-grass-tile', '/assets/art/platform/isometric_0058.png');
-    this.load.image('rock-tile', '/assets/art/platform/isometric_005.PNG');
+    preloadPlatformTextures(this);
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
     this.load.image('characterIndicator', 'assets/art/hooded/characterIndicator.png');
     this.load.image('liftPlatform', 'assets/art/navigation/liftPlatform_03.png')
@@ -332,80 +322,14 @@ export class GameScene extends Phaser.Scene {
       row.forEach((cell, columnIndex) => {
         if (!cell) return;
 
-        const centre = this.tileCentre(columnIndex, rowIndex);
-
-        // Images use their top corner as the vertical origin
-        const topY = centre.y - this.tileHeight/2;
-
-        const depth = cell.height === 0
-        // Ordinary floor always stays behind characters
-        ? -20000 + (columnIndex + rowIndex) * 100
-        // Raised blocks can hide characters 
-        : this.tileDepth(columnIndex, rowIndex);
-
-        // Undo the height offset to find the main floor position.
-        const baseTopY =
-          topY + cell.height * this.blockPixelHeight;
-
-        // Draw everything underneath the final top block.
-        for (let level = 0; level < cell.height; level++) {
-          const supportY =
-            baseTopY - level * this.blockPixelHeight;
-
-          const supportDepth = level === 0
-            // Ground-level block stays behind characters.
-            ? -20000 + (columnIndex + rowIndex) * 100
-            // Higher supports stay behind this column's top block.
-            : depth - (cell.height - level);
-
-            const supportTexture = this.textureForLevel(level, cell.height);
-
-          this.add.image(centre.x, supportY, supportTexture)
-            .setDisplayOrigin(94, 3)
-            .setScale(this.tileScale)
-            .setDepth(supportDepth);
-        }
-
-        const topTexture = this.textureForLevel(cell.height, cell.height);
-
-        const basePlatform = this.add.image(
-          centre.x,
-          topY,
-          topTexture
-        ).setDisplayOrigin(94, 3)
-         .setScale(this.tileScale)
-         .setDepth(depth);
-
-         // Red is a temporary visual marker for blocked tops
-        if (!cell.walkable) {
-          basePlatform.setTint(0xcc6666);
-        }
-        
-        const diamond = new Phaser.Geom.Polygon([
-          94, 3,
-          174, 49,
-          94, 95,
-          14, 49,
-        ]);
-
-        basePlatform.setInteractive(
-          diamond,
-          Phaser.Geom.Polygon.Contains
+        const basePlatform = drawPlatformTile(
+          this,
+          cell,
+          this.tileCentre(columnIndex, rowIndex),
+          this.tileDepth(columnIndex, rowIndex),
+          () => this.canReachTile(columnIndex, rowIndex),
         );
 
-        basePlatform.on('pointerover', () => {
-          const reachable = this.canReachTile(columnIndex, rowIndex);
-          basePlatform.setTint(reachable ? 0x88ff88 : 0xff6666);
-        });
-
-        basePlatform.on('pointerout', () => {
-          if (cell.walkable) {
-            basePlatform.clearTint();
-          } else {
-            basePlatform.setTint(0xcc6666);
-          }
-        });
-        
         basePlatform.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
           if (this.hasLift(columnIndex, rowIndex)) return;
 
@@ -459,25 +383,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.moveToTile(column, row);
-  }
-
-  private textureForLevel(level: number, stackHeight: number): string {
-
-    if (level === 0) {
-      return 'platform-tile';
-    }
-
-    if (level === 1) {
-      return this.hasTileAbove(level, stackHeight)
-        ? 'rock-tile'
-        : 'rock-grass-tile';
-    }
-
-    return 'rock-grass-tile'; // Level 2 and above
-  }
-
-  private hasTileAbove(level: number, stackHeight: number): boolean {
-    return level < stackHeight;
   }
 
   /* CREATE PLATFORM - [END] */
@@ -933,7 +838,7 @@ export class GameScene extends Phaser.Scene {
     const heightChange = targetHeight - cell.height;
 
     // Screen Y gets smaller when something moves around
-    const verticalChange =  -heightChange * this.blockPixelHeight;
+    const verticalChange =  -heightChange * blockPixelHeight;
 
     // Remember every character currently standing on this lift
     const passengers = this.characters.filter((_, index) => {
@@ -1022,8 +927,8 @@ export class GameScene extends Phaser.Scene {
     const sprite = this.add.image(centre.x, centre.y, 'liftPlatform')
       .setDisplayOrigin(128, 84)
       .setScale(
-        (this.tileWidth + borderOverlap) / 256,
-        (this.tileHeight + borderOverlap) / 128
+        (tileWidth + borderOverlap) / 256,
+        (tileHeight + borderOverlap) / 128
       )
       .setDepth(this.tileDepth(column, row) + 0.5);
 
@@ -1141,11 +1046,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Additional lift above the line connecting both surfaces
-    const jumpHeight = isJump ? this.blockPixelHeight + 12 : 0;
+    const jumpHeight = isJump ? blockPixelHeight + 12 : 0;
 
     const stepDistance = Math.hypot(
-      this.tileWidth / 2,
-      this.tileHeight / 2,
+      tileWidth / 2,
+      tileHeight / 2,
     );
 
     const startDepth = this.tileDepth(from.column, from.row);
@@ -1333,11 +1238,11 @@ export class GameScene extends Phaser.Scene {
 
     return {
       x: this.platformX 
-        + (column - row) * this.tileWidth / 2,
+        + (column - row) * tileWidth / 2,
 
       y: this.platformY 
-        + (column + row + 1) * this.tileHeight / 2
-        - height * this.blockPixelHeight,
+        + (column + row + 1) * tileHeight / 2
+        - height * blockPixelHeight,
     };
   }
 
