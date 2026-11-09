@@ -14,7 +14,7 @@ new Phaser.Game({
     arcade: { gravity: { x: 0, y: 1100 }, debug: false },
   },
   scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [GameScene, BackgroundScene],
+  scene: [GameScene, BackgroundScene,],
   input: {
     activePointers: 2,
   }
