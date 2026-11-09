@@ -188,13 +188,26 @@ export class GameScene extends Phaser.Scene {
       canvas.focus({ preventScroll: true });
     };
 
+    const switchCharacter = () => {
+      this.select(1 - this.activeIndex);
+      focus();
+    };
+
+    const switchButton = document.createElement('button');
+    switchButton.type = 'button';
+    switchButton.className = 'switch-character';
+    switchButton.setAttribute('aria-label', 'Switch active character');
+    switchButton.title = 'Switch active character (Q)';
+    switchButton.addEventListener('click', switchCharacter);
+    canvas.after(switchButton);
+
     const keyDown = (event: KeyboardEvent) => {
       if (!CONTROL_CODES.has(event.code)) return;
 
       event.preventDefault();
       if (event.repeat) return;
 
-      if (event.code === 'KeyQ') this.select(1 - this.activeIndex);
+      if (event.code === 'KeyQ') switchCharacter();
       if (event.code === 'Digit1') this.select(0);
       if (event.code === 'Digit2') this.select(1);
     };
@@ -205,6 +218,8 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       canvas.removeEventListener('pointerdown', focus);
       canvas.removeEventListener('keydown', keyDown);
+      switchButton.removeEventListener('click', switchCharacter);
+      switchButton.remove();
 
       this.route = [];
       this.isMoving = false;
