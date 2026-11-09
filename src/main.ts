@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GameScene } from './scenes/GameScene';
+import { BackgroundScene } from './scenes/BackgroundScene';
 import './style.css';
 
 new Phaser.Game({
@@ -13,7 +14,7 @@ new Phaser.Game({
     arcade: { gravity: { x: 0, y: 1100 }, debug: false },
   },
   scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [GameScene],
+  scene: [GameScene, BackgroundScene],
   input: {
     activePointers: 2,
   }
