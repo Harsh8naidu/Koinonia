@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { blockPixelHeight, drawPlatformTile, preloadPlatformTextures, tileHeight, tileWidth, type Cell } from './PlatformRenderer';
 import { CameraControls } from './CameraControls';
+import { BlueGems, preloadBlueGems } from './BlueGems';
 
 const SPEED = 260;
 const CONTROL_CODES = new Set([
@@ -41,7 +42,6 @@ export class GameScene extends Phaser.Scene {
   private characters: Phaser.GameObjects.Sprite[] = [];
   private activeIndex = 0;
   private indicator!: Phaser.GameObjects.Image;
-  private status!: Phaser.GameObjects.Text;
   private route: TilePosition[] = [];
   private characterLocations: CharacterLocation[] = [];
   private boxes: PushBox[] = [];
@@ -50,6 +50,7 @@ export class GameScene extends Phaser.Scene {
   private characterViews: ('front-right' | 'back-right')[] = [];
   private teleportTiles: TilePosition[] = [];
   private cameraControls!: CameraControls;
+  private gems!: BlueGems;
   private touchStartTile: TilePosition | null = null;
 
   private switches: LevelSwitch[] = [];
@@ -75,6 +76,7 @@ export class GameScene extends Phaser.Scene {
   // Art Assets
   preload(): void {
     preloadPlatformTextures(this);
+    preloadBlueGems(this);
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
     this.load.image('characterIndicator', 'assets/art/hooded/characterIndicator.png');
     this.load.image('liftPlatform', 'assets/art/navigation/liftPlatform_03.png')
@@ -137,6 +139,12 @@ export class GameScene extends Phaser.Scene {
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
 
+    this.gems = new BlueGems(this);
+    for (const { column, row } of [{ column: 8, row: 5 }, { column: 0, row: 7 }]) {
+      const centre = this.tileCentre(column, row);
+      this.gems.place(column, row, centre.x, centre.y, this.tileDepth(column, row) + 0.75);
+    }
+
     // Platform Navigation
     this. teleportTiles = [];
 
@@ -147,21 +155,25 @@ export class GameScene extends Phaser.Scene {
     this.switches = [];
     this.createSwitchAnimation();
 
-    const lift = this.createLift(0, 7);
+    const lift = this.createLift(1, 7);
 
     if (lift) {
-      this.createSwitch(5, 8, lift, 2);
+      this.createSwitch(9, 3, lift, 3);
     }    
 
     // Create and Animate Characters    
     this.createCharacterAnimations();
     this.createCharacters(); // Create Characters
+    this.indicator = this.add.image(0, 0, 'characterIndicator')
+      .setOrigin(0.5, -0.8)
+      .setScale(0.2)
+      .setDepth(10000);
 
     // Only the frontmost interactive objects receives the click
     this.input.setTopOnly(true);
 
     this.boxes = [];
-    this.createBox(8, 5);
+    this.createBox(8, 4);
     
     // Listen on the focusable canvas only: other page elements keep their keys.
     const canvas = this.game.canvas;
@@ -407,9 +419,6 @@ export class GameScene extends Phaser.Scene {
     // An obstacle: its top cannot be used.
     this.cells[3][2] = { height: 1, walkable: false };
 
-    this.cells[8][5] = { height: 1, walkable: true };
-    this.cells[7][5] = { height: 1, walkable: true };
-
     // An isolated two-block platform with no step beside it.
     this.cells[6][8] = { height: 2, walkable: true };
     this.cells[5][8] = { height: 2, walkable: true };
@@ -417,6 +426,9 @@ export class GameScene extends Phaser.Scene {
     this.cells[3][8] = { height: 2, walkable: true };
     this.cells[2][8] = { height: 2, walkable: true };
     this.cells[3][9] = { height: 2, walkable: true };
+
+    // Higher platform only reachable using lift
+    this.cells[7][0] = { height: 3, walkable: true };
   }
 
   private getCell(column: number, row: number): Cell | null {
@@ -516,6 +528,7 @@ export class GameScene extends Phaser.Scene {
         
         location.currentTile = { ...destination };
 
+        this.gems.collect(destination.column, destination.row, 500);
         this.tweens.add({
           targets: character,
           alpha: 1,
@@ -665,12 +678,14 @@ export class GameScene extends Phaser.Scene {
     location.reservedTile = boxTile;
     box.reservedTile = destination;
 
+    const pushDuration = 300;
+    this.gems.collect(boxTile.column, boxTile.row, pushDuration);
     const progress = { value: 0 };
 
     this.tweens.add({
       targets: progress,
       value: 1,
-      duration: 300,
+      duration: pushDuration,
       ease: 'Linear',
 
       onUpdate: () => {
@@ -1062,13 +1077,16 @@ export class GameScene extends Phaser.Scene {
     // Keep the current tile occupied and reserve the next one.
     location.reservedTile = next;
 
+    const stepDuration = isJump ? 350 : stepDistance / SPEED * 1000;
+    this.gems.collect(next.column, next.row, stepDuration);
+
     // Animate a value from 0 to 1, then calculate the position
     const progress = { value: 0 };
 
     this.tweens.add({
       targets: progress,
       value: 1,
-      duration: isJump ? 350 : stepDistance / SPEED * 1000,
+      duration: stepDuration,
       ease: 'Linear',
 
       onUpdate: () => {
@@ -1257,13 +1275,14 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.activeIndex = index;
-
-    this.status.setText(
-      `Active teammate: ${index === 0 ? 'A' : 'B'}   ·   Q to switch`,
-    );
+    this.updateIndicator();
   }
 
   update(): void {
+    this.updateIndicator();
+  }
+
+  private updateIndicator(): void {
     const active = this.characters[this.activeIndex];
     if (!active) return;
 

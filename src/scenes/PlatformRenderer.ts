@@ -62,13 +62,9 @@ function textureForLevel(level: number, stackHeight: number): string {
     return 'platform-tile';
   }
 
-  if (level === 1) {
-    return hasTileAbove(level, stackHeight)
-      ? 'rock-tile'
-      : 'rock-grass-tile';
-  }
-
-  return 'rock-grass-tile'; // Level 2 and above
+  return hasTileAbove(level, stackHeight)
+    ? 'rock-tile'
+    : 'rock-grass-tile';
 }
 
 function hasTileAbove(level: number, stackHeight: number): boolean {
