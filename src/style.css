@@ -12,24 +12,9 @@ body {
 }
 
 #game {
-  position: relative;
   width: 100%;
   height: 100dvh;
   overflow: hidden;
-}
-
-.switch-character {
-  position: absolute;
-  top: max(8px, env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
-  width: 88px;
-  height: 66px;
-  padding: 0;
-  border: 0;
-  background: transparent url('/assets/art/ui_buttons/PlayButton.png') center / contain no-repeat;
-  cursor: pointer;
-  touch-action: manipulation;
 }
 
 canvas {

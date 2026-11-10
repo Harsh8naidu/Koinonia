@@ -40,6 +40,9 @@ type LevelSwitch = {
 
 export class GameScene extends Phaser.Scene {
   private characters: Phaser.GameObjects.Sprite[] = [];
+  private characterGlows: Phaser.GameObjects.Image[] = [];
+  private raisedCharacter: number | null = null;
+  private pressedCharacter: number | null = null;
   private activeIndex = 0;
   private indicator!: Phaser.GameObjects.Image;
   private route: TilePosition[] = [];
@@ -79,6 +82,8 @@ export class GameScene extends Phaser.Scene {
     preloadBlueGems(this);
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
     this.load.image('characterIndicator', 'assets/art/hooded/characterIndicator.png');
+    this.load.image('character-glow', '/assets/art/hooded/glowEffectCharacteer.png');
+    this.load.image('character-change', '/assets/art/hooded/character_change.png');
     this.load.image('liftPlatform', 'assets/art/navigation/liftPlatform_03.png')
 
     this.load.spritesheet('teleport', 
@@ -134,6 +139,7 @@ export class GameScene extends Phaser.Scene {
 
     this.cameraControls = new CameraControls(this, () => {
       this.touchStartTile = null;
+      this.pressedCharacter = null;
     });
 
     this.createLevelData();
@@ -188,26 +194,13 @@ export class GameScene extends Phaser.Scene {
       canvas.focus({ preventScroll: true });
     };
 
-    const switchCharacter = () => {
-      this.select(1 - this.activeIndex);
-      focus();
-    };
-
-    const switchButton = document.createElement('button');
-    switchButton.type = 'button';
-    switchButton.className = 'switch-character';
-    switchButton.setAttribute('aria-label', 'Switch active character');
-    switchButton.title = 'Switch active character (Q)';
-    switchButton.addEventListener('click', switchCharacter);
-    canvas.after(switchButton);
-
     const keyDown = (event: KeyboardEvent) => {
       if (!CONTROL_CODES.has(event.code)) return;
 
       event.preventDefault();
       if (event.repeat) return;
 
-      if (event.code === 'KeyQ') switchCharacter();
+      if (event.code === 'KeyQ') this.select(1 - this.activeIndex);
       if (event.code === 'Digit1') this.select(0);
       if (event.code === 'Digit2') this.select(1);
     };
@@ -218,11 +211,10 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       canvas.removeEventListener('pointerdown', focus);
       canvas.removeEventListener('keydown', keyDown);
-      switchButton.removeEventListener('click', switchCharacter);
-      switchButton.remove();
 
       this.route = [];
       this.isMoving = false;
+      this.raisedCharacter = null;
     });
 
     this.select(0);
@@ -270,7 +262,25 @@ export class GameScene extends Phaser.Scene {
       character.setDepth(
         this.tileDepth(tile.column, tile.row) + 1
       );
+      character.setInteractive({ pixelPerfect: true });
+      character.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+        if (this.isMoving) return;
+        if (pointer.wasTouch) this.pressedCharacter = index;
+        else if (pointer.leftButtonDown()) this.pressCharacter(index);
+      });
+      character.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+        if (!pointer.wasTouch || pointer.wasCanceled || this.cameraControls.isPinching) return;
+        if (this.pressedCharacter === index && pointer.getDistance() <= 12) {
+          this.pressCharacter(index);
+        }
+      });
     });
+
+    this.characterGlows = this.characters.map(character =>
+      this.add.image(character.x, character.y, 'character-glow')
+        .setBlendMode(Phaser.BlendModes.ADD)
+    );
+    this.updateCharacterGlows();
   }
 
   private createCharacterAnimations(): void {
@@ -631,7 +641,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryPushBox(box: PushBox): void {
-    if (this.isMoving) return;
+    if (this.isMoving || this.raisedCharacter !== null) return;
 
     const characterIndex = this.activeIndex;
     const location = this.characterLocations[characterIndex];
@@ -831,7 +841,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryPressSwitch(levelSwitch: LevelSwitch): void {
-    if (this.isMoving) return;
+    if (this.isMoving || this.raisedCharacter !== null) return;
 
     const playerTile = this.characterLocations[this.activeIndex].currentTile;
 
@@ -1016,7 +1026,7 @@ export class GameScene extends Phaser.Scene {
   /* MOVE CHARACTER ALONG A PATH - [START] */
 
   private moveToTile(column: number, row: number): void {
-    if (this.isMoving) return;
+    if (this.isMoving || this.raisedCharacter !== null) return;
     if (!this.isWalkable(column, row, this.activeIndex)) return;
 
    const start = this.characterLocations[this.activeIndex].currentTile;
@@ -1283,7 +1293,36 @@ export class GameScene extends Phaser.Scene {
     return -10000 + (column + row) * 100;
   }
 
+  private pressCharacter(index: number): void {
+    if (this.isMoving) return;
+    if (this.raisedCharacter === index) {
+      this.select(index);
+      return;
+    }
+
+    this.lowerRaisedCharacter();
+    this.raisedCharacter = index;
+    const character = this.characters[index];
+    character.anims.stop();
+    character.setTexture(`hooded-${this.characterViews[index]}`, 0);
+    character.y -= 10;
+    this.characterGlows[index].setTexture('character-change').setScale(0.55);
+  }
+
+  private lowerRaisedCharacter(): void {
+    const index = this.raisedCharacter;
+    if (index === null) return;
+
+    const character = this.characters[index];
+    const tile = this.characterLocations[index].currentTile;
+    character.y = this.tileCentre(tile.column, tile.row).y;
+    character.play(`idle-${this.characterViews[index]}`);
+    this.characterGlows[index].setTexture('character-glow').setScale(1);
+    this.raisedCharacter = null;
+  }
+
   private select(index: number): void {
+    this.lowerRaisedCharacter();
     if(index !== this.activeIndex) {
       // Finish the current step, but cancel the remaining route
       this.route = [];
@@ -1294,7 +1333,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(): void {
+    this.updateCharacterGlows();
     this.updateIndicator();
+  }
+
+  private updateCharacterGlows(): void {
+    this.characterGlows.forEach((glow, index) => {
+      const character = this.characters[index];
+      glow.setPosition(character.x, character.y - 40);
+      glow.setAlpha(0.55 * character.alpha);
+      if (glow.depth !== character.depth - 0.1) {
+        glow.setDepth(character.depth - 0.1);
+      }
+    });
   }
 
   private updateIndicator(): void {
