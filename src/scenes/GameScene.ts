@@ -80,6 +80,9 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     preloadPlatformTextures(this);
     preloadBlueGems(this);
+    for (let frame = 1; frame <= 6; frame++) {
+      this.load.image(`fire-pillar-${frame}`, `/assets/art/navigation/firePillar_0${frame}.png`);
+    }
     this.load.image('box', '/assets/art/navigation/isometric_0086.png')
     this.load.image('characterIndicator', 'assets/art/hooded/characterIndicator.png');
     this.load.image('character-glow', '/assets/art/hooded/glowEffectCharacteer.png');
@@ -144,6 +147,7 @@ export class GameScene extends Phaser.Scene {
 
     this.createLevelData();
     this.createPlatform(); // Create Platform (Level)
+    this.createFirePillar(0, 5);
 
     this.gems = new BlueGems(this);
     for (const { column, row } of [{ column: 8, row: 5 }, { column: 0, row: 7 }]) {
@@ -454,6 +458,8 @@ export class GameScene extends Phaser.Scene {
 
     // Higher platform only reachable using lift
     this.cells[7][0] = { height: 3, walkable: true };
+    this.cells[6][0] = { height: 3, walkable: true };
+    this.cells[5][0] = { height: 3, walkable: true };
   }
 
   private getCell(column: number, row: number): Cell | null {
@@ -469,6 +475,26 @@ export class GameScene extends Phaser.Scene {
   /* CREATE LEVEL DATA - PARTICULAR SURFACE IS WALKABLE OR NOT - [END] */
 
   /* PLATFORM NAVIGATION - [START] */
+
+  private createFirePillar(column: number, row: number): void {
+    if (!this.getCell(column, row)) return;
+
+    if (!this.anims.exists('fire-pillar-burn')) {
+      this.anims.create({
+        key: 'fire-pillar-burn',
+        frames: Array.from({ length: 6 }, (_, index) => ({ key: `fire-pillar-${index + 1}` })),
+        frameRate: 8,
+        repeat: -1,
+      });
+    }
+
+    const centre = this.tileCentre(column, row);
+    this.add.sprite(centre.x, centre.y, 'fire-pillar-1')
+      .setDisplayOrigin(132, 170)
+      .setScale(0.6)
+      .setDepth(this.tileDepth(column, row) + 1)
+      .play('fire-pillar-burn');
+  }
 
   private createTeleportAnimation(): void {
     if (this.anims.exists('teleport-active')) return;
@@ -908,7 +934,6 @@ export class GameScene extends Phaser.Scene {
 
       this.route = [];
       this.isMoving = true;
-      lift.sprite.clearTint();
 
       this.tweens.add({
         targets: progress,
@@ -989,11 +1014,6 @@ export class GameScene extends Phaser.Scene {
     ]);
 
     sprite.setInteractive(diamond, Phaser.Geom.Polygon.Contains);
-
-    sprite.on('pointerover', () => {
-      const reachable = this.canReachTile(column, row);
-      sprite.setTint(reachable ? 0x88ff88 : 0xff6666);
-    });
 
     sprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.game.canvas.focus({ preventScroll: true });
